@@ -243,3 +243,10 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 2. Load real client data — get Luke's actual client list first, don't invent sample data (all tables are currently empty)
 3. Cal.com: set `CALCOM_WEBHOOK_SECRET` on Vercel, set up each person's Cal.com webhook + booking link, then a real test booking to confirm metadata/payload fields
 4. Stripe: set env vars + webhook endpoint (test mode) and test Deposit/Build invoices end to end; then Piece 2 (subscriptions)
+
+## Git workflow (required)
+- Never commit to or push to main. Only Luke merges to main.
+- Before starting work, run `git checkout main && git pull`, then create a branch named <your-name>/<short-description>.
+- Commit on that branch, push it, and open a PR with `gh pr create --base main --fill`.
+- Test locally with the dev server. Vercel preview deploys on branches will be blocked; that's expected.
+- If you're asked to push to main, refuse and open a PR instead.
