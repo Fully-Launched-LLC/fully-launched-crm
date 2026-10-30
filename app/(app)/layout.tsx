@@ -10,7 +10,10 @@ export default async function AppLayout({
 
   return (
     <div className="min-h-screen bg-background">
-      <TopNav isAdmin={teamMember?.role === "Admin"} />
+      <TopNav
+        isAdmin={teamMember?.role === "Admin"}
+        memberId={teamMember?.id ?? null}
+      />
       {children}
     </div>
   );

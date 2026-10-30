@@ -17,6 +17,8 @@
 
   --color-accent: #1B2B4B; /* brand navy */
   --color-accent-fg: #ffffff;
+
+  --color-tan: #C4A882; /* brand tan, secondary accent */
 }
 
 body {

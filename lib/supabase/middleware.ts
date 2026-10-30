@@ -34,6 +34,11 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
+    // Come back here after signing in (e.g. the installed FL Clock app
+    // opening /clock).
+    url.search = "";
+    const next = request.nextUrl.pathname + request.nextUrl.search;
+    if (next !== "/") url.searchParams.set("next", next);
     return NextResponse.redirect(url);
   }
 

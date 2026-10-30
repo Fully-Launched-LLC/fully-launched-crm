@@ -17,7 +17,12 @@ function SubmitButton() {
   );
 }
 
-export default function LoginPage() {
+export default function LoginPage({
+  searchParams,
+}: {
+  // Set by the middleware: where to go after signing in.
+  searchParams: { next?: string };
+}) {
   const [state, formAction] = useFormState(login, undefined);
 
   return (
@@ -29,6 +34,8 @@ export default function LoginPage() {
         <h1 className="text-xl font-semibold text-foreground">
           Fully Launched CRM
         </h1>
+
+        <input type="hidden" name="next" value={searchParams.next ?? ""} />
 
         <div>
           <label

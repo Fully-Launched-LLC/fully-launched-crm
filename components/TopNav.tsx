@@ -4,6 +4,10 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { BRANCH_SLUGS, branchLabel, type BranchSlug } from "@/lib/branches";
+import NavClock from "@/components/clock/NavClock";
+import UndoToast from "@/components/clock/UndoToast";
+import ClockOutDialog from "@/components/clock/ClockOutDialog";
+import { useTimeClock } from "@/components/clock/useTimeClock";
 
 // Nav-only labels; routes, branch values, and page headings are unchanged
 // (e.g. /projects/ai still says "AI").
@@ -14,10 +18,19 @@ const SUB_TAB_LABELS: Partial<Record<BranchSlug, string>> = {
 
 const PROJECTS_HREF = "/projects/all";
 
-export default function TopNav({ isAdmin }: { isAdmin: boolean }) {
+export default function TopNav({
+  isAdmin,
+  memberId,
+}: {
+  isAdmin: boolean;
+  // Signed-in user's team_members id; null if their login isn't on the
+  // roster (no clock then).
+  memberId: string | null;
+}) {
   const pathname = usePathname();
   const [menuOpen, setMenuOpen] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
+  const clock = useTimeClock(memberId);
 
   // Branch list pages — these get the sub-tab row.
   const onProjects = pathname.startsWith("/projects/");
@@ -104,6 +117,11 @@ export default function TopNav({ isAdmin }: { isAdmin: boolean }) {
             {tab.label}
           </Link>
         ))}
+        {memberId && (
+          <div className="ml-auto py-2">
+            <NavClock clock={clock} />
+          </div>
+        )}
       </div>
 
       {/* Desktop Projects sub-tabs: a lighter second row, only on /projects/*. */}
@@ -133,7 +151,9 @@ export default function TopNav({ isAdmin }: { isAdmin: boolean }) {
         <span className="py-3 text-sm font-medium text-header-foreground">
           {activeLabel}
         </span>
-        <button
+        <div className="flex items-center gap-2">
+          {memberId && <NavClock clock={clock} />}
+          <button
           type="button"
           onClick={() => setMenuOpen((v) => !v)}
           aria-expanded={menuOpen}
@@ -156,7 +176,8 @@ export default function TopNav({ isAdmin }: { isAdmin: boolean }) {
               <path d="M4 7h16M4 12h16M4 17h16" />
             )}
           </svg>
-        </button>
+          </button>
+        </div>
       </div>
 
       {menuOpen && (
@@ -239,6 +260,8 @@ export default function TopNav({ isAdmin }: { isAdmin: boolean }) {
           </div>
         </>
       )}
+      <UndoToast clock={clock} />
+      <ClockOutDialog clock={clock} />
     </nav>
   );
 }

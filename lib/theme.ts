@@ -2,6 +2,12 @@
 // not brand). Brand colors themselves live in app/globals.css CSS variables
 // and tailwind.config.ts — never hardcode brand colors in components.
 
+// Brand navy for the one place that can't read --color-accent
+// (app/globals.css): the theme-color meta tag (app/layout.tsx). Keep in sync
+// with --color-accent, and with public/manifest.json (static JSON, so it
+// repeats the navy and tan hex values).
+export const BRAND_NAVY_HEX = "#1B2B4B";
+
 export type Branch = "Media" | "Websites" | "Ecommerce" | "AI";
 
 // Order and values mirror the `projects_branch_check` constraint (migration
@@ -106,6 +112,18 @@ export const CALL_STATUS_COLORS: Record<
   Completed: "bg-green-50 text-green-700 border border-green-200",
   Cancelled: "bg-red-50 text-red-700 border border-red-200",
   Rescheduled: "bg-amber-50 text-amber-700 border border-amber-200",
+};
+
+// Time clock status pills (Timesheets, /clock). Same pastel pattern as the
+// stage badges. "Forgot to clock out?" uses the overdue red.
+export const TIME_STATUS_COLORS: Record<
+  "Open" | "Forgot to clock out?" | "Pending approval" | "Approved",
+  string
+> = {
+  Open: "bg-amber-50 text-amber-700 border border-amber-200",
+  "Forgot to clock out?": "bg-red-50 text-red-700 border border-red-200",
+  "Pending approval": "bg-indigo-50 text-indigo-700 border border-indigo-200",
+  Approved: "bg-green-50 text-green-700 border border-green-200",
 };
 
 // Stages that no longer count as "active" for overdue-date highlighting.

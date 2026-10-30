@@ -97,6 +97,43 @@ export type Contact = {
   created_at: string;
 };
 
+// Time clock (migration 014). Rows come from the time_entries_net view,
+// which adds duration/adjustment/net minutes to each time_entries row.
+export type TimeEntryType = "project" | "management" | "sales" | "internal";
+
+export type TimeEntry = {
+  id: string;
+  user_id: string;
+  project_id: string | null;
+  entry_type: TimeEntryType;
+  clock_in: string;
+  clock_out: string | null;
+  note: string | null;
+  // "What did you accomplish?", required once clocked out (migration 015).
+  accomplished: string | null;
+  approved_by: string | null;
+  approved_at: string | null;
+  created_at: string;
+};
+
+export type TimeEntryNet = TimeEntry & {
+  duration_minutes: number;
+  adjustment_minutes: number;
+  deduction_count: number;
+  net_minutes: number;
+};
+
+export type TimeEntryEdit = {
+  id: string;
+  time_entry_id: string;
+  field: "clock_in" | "clock_out";
+  old_value: string | null;
+  new_value: string | null;
+  reason: string;
+  edited_by: string | null;
+  edited_at: string;
+};
+
 export function isOverdue(project: Pick<Project, "target_date" | "stage">) {
   if (!project.target_date) return false;
   if (

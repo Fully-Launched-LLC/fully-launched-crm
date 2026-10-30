@@ -1,6 +1,8 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import localFont from "next/font/local";
 import "./globals.css";
+import ServiceWorkerRegister from "@/components/pwa/ServiceWorkerRegister";
+import { BRAND_NAVY_HEX } from "@/lib/theme";
 
 const geistSans = localFont({
   src: "./fonts/GeistVF.woff",
@@ -16,6 +18,15 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "Fully Launched CRM",
   description: "Internal CRM for Fully Launched",
+  // Installable as "FL Clock" (start_url /clock). See CLAUDE.md for install
+  // steps.
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, title: "FL Clock" },
+  icons: { apple: "/icons/apple-touch-icon.png" },
+};
+
+export const viewport: Viewport = {
+  themeColor: BRAND_NAVY_HEX,
 };
 
 export default function RootLayout({
@@ -29,6 +40,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         {children}
+        <ServiceWorkerRegister />
       </body>
     </html>
   );

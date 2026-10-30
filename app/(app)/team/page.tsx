@@ -3,6 +3,7 @@ import { getCurrentTeamMember } from "@/lib/auth";
 import type { TeamMember } from "@/lib/types";
 import TeamManager from "@/components/team/TeamManager";
 import TeamDirectory from "@/components/team/TeamDirectory";
+import TeamTabs from "@/components/team/TeamTabs";
 
 export default async function TeamPage() {
   const teamMember = await getCurrentTeamMember();
@@ -25,6 +26,8 @@ export default async function TeamPage() {
           ? "Manage the roster, roles, and Cal.com booking links."
           : "Cal.com booking links for booking a client call with the right person."}
       </p>
+
+      <TeamTabs />
 
       <div className="mt-6">
         {isAdmin ? (

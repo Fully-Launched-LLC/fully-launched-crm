@@ -23,6 +23,7 @@ const config: Config = {
           DEFAULT: "var(--color-accent)",
           foreground: "var(--color-accent-fg)",
         },
+        tan: "var(--color-tan)",
         // Fixed branch colors, sourced from lib/theme.ts.
         branch: {
           media: BRANCH_FILL.Media,

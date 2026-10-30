@@ -1,5 +1,27 @@
 # Fully Launched CRM — CLAUDE.md
 
+## Current status (keep under 30 lines)
+
+- Live at `crm.fullylaunched.com`. Projects (25 rows), leads (32), contacts (26) have real data as of 2026-10-30.
+- Built: Projects (Table/Kanban/Manage), Leads, Contacts (grouping/merge), Transactions (Admin), Team (roster + directory), Dashboard, Stripe Piece 1 (Deposit/Build invoices), Cal.com stages 1 and 2.
+- **Phase 1 Time clock: built; migration 014 applied to live 2026-10-30** (via MCP `apply_migration`, in migration history). Awaiting Luke's localhost click-through.
+- Next: Phase 2 Payouts + Earn-up (needs the `project_hourly` rate from Luke; commission = cash collected, see roadmap below), Phase 3 Onboarding (needs `docs/onboarding/tait.md` + `elias.md`), Phase 4 Integrations (Social card, Lead Finder import contract).
+- **Migration drift: resolved 2026-10-30.** `013b_baseline_live_policies.sql` (applied, in history) recreates the live CRM functions, triggers, policies and the `clients_owner_gin` index; proven a no-op on live. A fresh replay of schema.sql + 002..014 now matches live for the CRM tables and runs without FL-social-dash (013's `social_*` revokes are guarded by `to_regprocedure`). Apply future migrations with MCP `apply_migration` so they land in history. `set_updated_at()` is shared with FL-social-dash triggers. Next: 016_normalize_role_checks (lowercased email + confirmed email everywhere), pending Phase 1 sign-off.
+- Open items: Cal.com webhook secret + real test booking; Stripe env vars + end-to-end test; Salesperson RLS verification pass.
+
+## Recent changes (last 10)
+
+1. Clock-out accomplishment note (015, applied; also made `time_entries_net` select-only for authenticated); Timesheets date range presets + ?from=&to=, day grouping, grand total. 013b baseline applied (drift closed), 013 made runnable without FL-social-dash, 014 applied. Phase 1 fixes: weeks/today bucketed in America/Chicago; service worker caches only icons + manifest. Phase 1 Time clock: `time_entries` / `time_adjustments` / `time_entry_edits` + `time_entries_net` view (migration 014), nav clock, `/clock`, FL Clock PWA, Team > Timesheets. Login now returns to `?next=`.
+2. 013: revoke anon execute on SECURITY DEFINER functions; pin search_path.
+3. Cal.com stage 2: webhook, call history, unmatched calls (012).
+4. Cal.com stage 1: booking links, Book a call, read-only Team directory.
+5. Contacts: auto-grouping, manual merge/unmerge, inline editing (011).
+6. Branch-colored Kanban card borders.
+7. Build Value / Subscription MRR replace legacy Value in the UI.
+8. Stripe Piece 1: Deposit/Build invoices + `invoice.paid` webhook (010).
+9. Two-level nav: Projects parent tab with branch sub-tabs.
+10. Kanban branch tags only on the All board.
+
 ## Stack & infra
 
 - Next.js 14 (App Router, TypeScript, Tailwind)
@@ -7,14 +29,14 @@
 - Vercel project `fl-crm` (a duplicate empty project named `fully-launched-crm` exists and should stay deleted/unused)
 - GitHub: `Fully-Launched/fully-launched-crm`, local path `~/Desktop/Files/Dev/FL/fully-launched-crm`, alias `launch`
 - Keep-alive cron: `app/api/keep-alive/route.ts` + `vercel.json`, pings Supabase every 3 days to prevent free-tier auto-pause. Don't duplicate this. **Until 2026-09-23 it never actually ran** — the auth middleware redirected the cron's session-less request to `/login`. Fixed by excluding it in the `middleware.ts` matcher.
-- Server-to-server routes (crons, third-party webhooks) must skip the auth middleware: `/api/keep-alive` and everything under `/api/webhooks/` are excluded in the `middleware.ts` matcher. Put new webhooks under `/api/webhooks/<provider>` and have each handler verify its caller itself (e.g. the provider's signature) — nothing upstream authenticates them.
+- Server-to-server routes (crons, third-party webhooks) must skip the auth middleware: `/api/keep-alive` and everything under `/api/webhooks/` are excluded in the `middleware.ts` matcher. So are `/manifest.json` and `/sw.js` (browsers fetch the manifest without cookies; a login redirect breaks install). Put new webhooks under `/api/webhooks/<provider>` and have each handler verify its caller itself (e.g. the provider's signature) — nothing upstream authenticates them.
 
 ## Auth & nav
 
 - Email/password only, no signup page
 - Accounts are created manually in Supabase dashboard → Authentication → **Add User** (not "Invite User" — Invite User triggers an email flow that caused problems last time). Luke sets each person's initial password directly and sends it himself.
-- Unauthenticated → redirect to `/login`; authenticated → land on `/dashboard`
-- Nav (`components/TopNav.tsx`), two levels. Top: Dashboard / Leads / Projects / Transactions / Contacts / Team. "Projects" goes to `/projects/all` and is highlighted on any `/projects/*` page and on `/project/[id]`; on `/projects/*` a lighter second row shows All / Media / Websites / Ecomm / AI Integration (nav-only labels — routes, branch values, and page headings are unchanged, e.g. `/projects/ai` still says "AI"). Transactions is Admin-only (hidden from nav, page redirects non-Admins; RLS is the real gate). Team is visible to everyone: Admins get the roster manager, everyone else a read-only directory with booking links. Below `sm` the nav collapses to a hamburger dropdown with the Projects sub-tabs nested under an expandable Projects entry.
+- Unauthenticated → redirect to `/login?next=<path>`; after sign-in → back to `next` (same-site paths only, `safeNext` in `app/login/actions.ts`), else `/dashboard`
+- Nav (`components/TopNav.tsx`), two levels. Top: Dashboard / Leads / Projects / Transactions / Contacts / Team. "Projects" goes to `/projects/all` and is highlighted on any `/projects/*` page and on `/project/[id]`; on `/projects/*` a lighter second row shows All / Media / Websites / Ecomm / AI Integration (nav-only labels — routes, branch values, and page headings are unchanged, e.g. `/projects/ai` still says "AI"). Transactions is Admin-only (hidden from nav, page redirects non-Admins; RLS is the real gate). Team is visible to everyone: Admins get the roster manager, everyone else a read-only directory with booking links. Below `sm` the nav collapses to a hamburger dropdown with the Projects sub-tabs nested under an expandable Projects entry. The nav clock sits at the right of the top row (next to the hamburger on mobile); see Time clock. Team has in-page tabs People / Timesheets (`components/team/TeamTabs.tsx`), not a nav second row.
 
 ## Branding
 
@@ -166,6 +188,7 @@ If Target Date is in the past and Stage is **not** Complete, Subscriber, or Lost
 
 ## Rules
 
+- UI copy: no em-dashes anywhere (use a period, comma, colon, or "to").
 - Schema changes go in new numbered migration files — never edit `schema.sql` directly
 - Don't touch DNS for the root domain `fullylaunched.com`
 - Brand palette lives in one theme config file (`lib/theme.ts`), single swap point
@@ -206,6 +229,27 @@ Cal.com over Calendly. No team/paid tier — each team member uses their own fre
 - Shown: **Calls** section on the Manage Project page (`components/CallHistory.tsx`: when / with / team member (+ booked by) / status — Upcoming, Completed (= booked + past, `lib/calls.ts`), Cancelled, Rescheduled; upcoming first, then past). Dashboard: "Upcoming Scheduled Calls" (booked, next 7 days) reads from `calls`; **"Unmatched Calls"** card lists booked calls with no project link, each with a project picker + "Assign to project" (`assign_call_to_project()`). `projects.scheduled_call` stays in the schema, unused.
 - Call times render in the viewer's timezone via `components/LocalDateTime.tsx` (client-side; server rendering would use UTC).
 
+## Time clock (Phase 1, migration 014)
+
+- **Tables:** `time_entries` (one per clock-in; `entry_type` enum project / management / sales / internal; nullable `project_id`; `approved_by`/`approved_at`), `time_adjustments` (minutes, negative = deduction, reason default `distracted`), `time_entry_edits` (audit of Admin clock time changes: field, old, new, reason, editor, time). View `time_entries_net` (`security_invoker`): `duration_minutes`, `adjustment_minutes`, `deduction_count`, `net_minutes = greatest(0, duration + adjustments)`; open entries count to `now()`.
+- `current_team_member_id()` (security definer) returns the caller's `team_members.id`, matched like `is_team_member()`.
+- **Rules (all enforced in the DB, UI just mirrors):** one open entry per user (partial unique index). `clock_in` is always server time on insert. Owners can only update their own open entry; closing it forces `clock_out = now()`. Any other `clock_in`/`clock_out` change is Admin-only, needs a reason, and goes through `admin_edit_time_entry(id, in, out, reason)`; the update trigger writes `time_entry_edits`. Approval: Admin only, closed management entries only; trigger stamps approver + time. Management time counts toward pay only once approved; other types always count.
+- **"I got distracted (-10)":** inserts a -10 adjustment on the open entry. Non-Admins: deductions only, own open entry only, never below 0 net (trigger, row-locked). Undo toast for 10s; the server allows the creator to delete within 60s (RLS), and a blocked delete returns zero rows.
+- **Accomplishment note (migration 015):** `time_entries.accomplished`, required once closed: `time_entries_accomplished_check` = `clock_out is null or char_length(btrim(accomplished)) >= 5`, so every close path (owner, Admin edit, API) needs it and it can't be blanked later. Every Clock out button opens "What did you accomplish?" (`components/clock/ClockOutDialog.tsx` → `AccomplishedDialog.tsx`; Cmd/Ctrl+Enter submits, Cancel stays clocked in; one dialog per clock state, rendered in `TopNav` and `ClockPanel`). Owners can edit their own note afterwards ("own update" policy; the update trigger limits non-Admins on a closed entry to `accomplished` only). Admin edits it in the Edit dialog; `admin_edit_time_entry` takes a 5th arg `p_accomplished` so closing a forgotten entry and writing its note is one statement. A note-only Admin change is a plain update (no reason).
+- Open > 12h → "Forgot to clock out?" (red) in the nav, `/clock`, and Timesheets. Never auto-closes; the person clocks out and an Admin fixes the time.
+- `time_entries.user_id` is `ON DELETE RESTRICT`: a team member with time entries can't be deleted (pay records).
+- **RLS:** every team member reads all entries, adjustments and edits (MOU: time reviewable by the team).
+- **Pay timezone:** all pay-period math (Timesheets weeks, the clock's "Today" total and deduction count, and Phase 2 payout periods) buckets by **America/Chicago** (`PAY_TIMEZONE`, `lib/timeclock.ts`) for every viewer: weeks are Monday 00:00 to Sunday 23:59:59 Central, an entry belongs to the week/day of its `clock_in`. Times are *displayed* in the viewer's local timezone. Use the `PayDate` helpers (`payDateOf`, `payWeekMonday`, `payWeekRange`, `payMidnight`), never `Date#setHours`/`getDay`, for any bucketing.
+- **UI:** nav clock (`components/clock/NavClock.tsx`; one `useTimeClock` state in `TopNav`, shared by the desktop and mobile instances). `/clock` (`app/clock/page.tsx`, outside the `(app)` layout, no nav, fits ~320x420). Team > Timesheets (`/team/timesheets`, `components/team/Timesheets.tsx`): range presets This week / Last week / This month / Last month / Custom (date pickers), in the URL as `?from=YYYY-MM-DD&to=YYYY-MM-DD` (whole America/Chicago days, inclusive; invalid or missing → this week; `parsePayRange`, `presetRange` in `lib/timeclock.ts`), Prev/Next arrows whenever the range is a whole Mon to Sun week, entries grouped by Central day with day subtotals, an "All" grand total row, accomplishment note under each entry (2 lines, click to expand), per-person totals by type, deductions, pending management time, "Clocked in now" list (open entries from any week), Admin Approve + Edit (reason required). Entries count in the week of their `clock_in`.
+- Active projects for the picker = stage not Complete or Lost.
+
+### FL Clock PWA
+
+- `public/manifest.json` (name "FL Clock", `start_url` `/clock`, standalone, navy theme / tan background), icons in `public/icons/` (rocket mark from `fully-launched-site/assets/logo-white.png` on navy with a tan bar), `public/sw.js` registered by `components/pwa/ServiceWorkerRegister.tsx`.
+- The service worker caches only `/icons/*` and `/manifest.json` (network first, cache as offline fallback, never a redirected response). Every other request (pages, `/_next/*`, `/api/*`, Supabase, cross-origin) is network only: the fetch handler returns without `respondWith`. Caching is off on localhost. Bump `CACHE` in `sw.js` if its caching logic changes (v2 dropped v1's `/_next/static` caching).
+- Navy/tan hex are repeated in `manifest.json` (static JSON) and `BRAND_NAVY_HEX` (`lib/theme.ts`, for the theme-color meta); `--color-tan` is the CSS token.
+- **Install:** Chrome: open `crm.fullylaunched.com/clock` → **Install app** (the install icon at the right of the address bar, or ⋮ → Cast, save, and share → Install FL Clock). Safari (macOS Sonoma+): open the page → **File > Add to Dock**. Sign in once in the app window; after that it opens straight to the clock.
+
 ## Stripe
 
 API keys server-side only, from env vars, never hardcoded. Start in **test mode** (`sk_test_…`).
@@ -228,6 +272,15 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 - "Send Monthly Invoice" (Subscription section) is still a placeholder notice.
 - Plan: Subscription-toggled projects use Stripe Subscriptions, store `stripe_subscription_id`, surface `subscription_status` (Stripe statuses include incomplete, trialing, active, past_due, canceled, unpaid, paused). Webhooks `customer.subscription.*`, `invoice.paid`, `invoice.payment_failed`.
 - **Deferred:** Subscription auto-charge — do NOT build without a separate explicit decision. Open: failed-payment handling, proration, billing-event notifications.
+
+## Roadmap: Phase 2 decisions (not built yet)
+
+- Rates in `payout_rates` (Admin-editable, nothing hardcoded): seed management_hourly = 50, sales_commission_pct = 10; project_hourly still needs a number from Luke.
+- Commission is earned on cash collected: only paid transactions count, credited to the payout period containing the paid date. A later refund creates a negative commission line in the next open period; closed periods are never edited.
+- Closed payout periods are immutable. Corrections go in as adjustment lines in an open period, with a required note.
+- **Once a payout period is closed, every time entry in it is fully locked, including the accomplishment note for non-Admins** (today the owner can still edit their note on any closed entry; Phase 2 must add the period check to the `time_entries` update trigger).
+- All period math uses America/Chicago (`PAY_TIMEZONE`).
+- Phase 4 Lead Finder: no ported UI exists; build only the import route and a Leads page filter.
 
 ## Deferred / explicitly out of scope
 

@@ -23,5 +23,14 @@ export async function login(
     return { error: error.message };
   }
 
-  redirect("/dashboard");
+  redirect(safeNext(formData.get("next")));
+}
+
+// Only same-site paths ("/clock"), never "//evil.com" or a full URL.
+function safeNext(value: FormDataEntryValue | null): string {
+  if (typeof value !== "string") return "/dashboard";
+  if (!value.startsWith("/") || value.startsWith("//") || value.startsWith("/\\")) {
+    return "/dashboard";
+  }
+  return value;
 }
