@@ -6,21 +6,22 @@
 - Built: Projects (Table/Kanban/Manage), Leads, Contacts (grouping/merge), Transactions (Admin), Team (roster + directory), Dashboard, Stripe Piece 1 (Deposit/Build invoices), Cal.com stages 1 and 2.
 - **Phase 1 Time clock: built; migration 014 applied to live 2026-10-30** (via MCP `apply_migration`, in migration history). Awaiting Luke's localhost click-through.
 - Next: Phase 2 Payouts + Earn-up (needs the `project_hourly` rate from Luke; commission = cash collected, see roadmap below), Phase 3 Onboarding (needs `docs/onboarding/tait.md` + `elias.md`), Phase 4 Integrations (Social card, Lead Finder import contract).
-- **Migration drift: resolved 2026-10-30.** `013b_baseline_live_policies.sql` (applied, in history) recreates the live CRM functions, triggers, policies and the `clients_owner_gin` index; proven a no-op on live. A fresh replay of schema.sql + 002..014 now matches live for the CRM tables and runs without FL-social-dash (013's `social_*` revokes are guarded by `to_regprocedure`). Apply future migrations with MCP `apply_migration` so they land in history. `set_updated_at()` is shared with FL-social-dash triggers. Next: 016_normalize_role_checks (lowercased email + confirmed email everywhere), pending Phase 1 sign-off.
+- **Migration drift: resolved 2026-10-30.** `013b_baseline_live_policies.sql` (applied, in history) recreates the live CRM functions, triggers, policies and the `clients_owner_gin` index; proven a no-op on live. A fresh replay of schema.sql + 002..014 now matches live for the CRM tables and runs without FL-social-dash (013's `social_*` revokes are guarded by `to_regprocedure`). Apply future migrations with MCP `apply_migration` so they land in history. `set_updated_at()` is shared with FL-social-dash triggers. 016 (applied) normalized every role check and swept grants (see Roles).
+- Open item: Default privileges in public still grant new objects to anon/public. Shared schema with FL-social-dash, decide with Tait before changing.
 - Open items: Cal.com webhook secret + real test booking; Stripe env vars + end-to-end test; Salesperson RLS verification pass.
 
 ## Recent changes (last 10)
 
-1. Clock-out accomplishment note (015, applied; also made `time_entries_net` select-only for authenticated); Timesheets date range presets + ?from=&to=, day grouping, grand total. 013b baseline applied (drift closed), 013 made runnable without FL-social-dash, 014 applied. Phase 1 fixes: weeks/today bucketed in America/Chicago; service worker caches only icons + manifest. Phase 1 Time clock: `time_entries` / `time_adjustments` / `time_entry_edits` + `time_entries_net` view (migration 014), nav clock, `/clock`, FL Clock PWA, Team > Timesheets. Login now returns to `?next=`.
-2. 013: revoke anon execute on SECURITY DEFINER functions; pin search_path.
-3. Cal.com stage 2: webhook, call history, unmatched calls (012).
-4. Cal.com stage 1: booking links, Book a call, read-only Team directory.
-5. Contacts: auto-grouping, manual merge/unmerge, inline editing (011).
-6. Branch-colored Kanban card borders.
-7. Build Value / Subscription MRR replace legacy Value in the UI.
-8. Stripe Piece 1: Deposit/Build invoices + `invoice.paid` webhook (010).
-9. Two-level nav: Projects parent tab with branch sub-tabs.
-10. Kanban branch tags only on the All board.
+1. 016: is_admin()/is_admin_or_manager()/transactions policy use the is_team_member() identity rule (confirmed email, case-insensitive); trigger functions lose execute grants; truncate/references/trigger revoked on CRM tables; getCurrentTeamMember() uses current_team_member_id().
+2. Clock-out accomplishment note (015, applied; also made `time_entries_net` select-only for authenticated); Timesheets date range presets + ?from=&to=, day grouping, grand total. 013b baseline applied (drift closed), 013 made runnable without FL-social-dash, 014 applied. Phase 1 fixes: weeks/today bucketed in America/Chicago; service worker caches only icons + manifest. Phase 1 Time clock: `time_entries` / `time_adjustments` / `time_entry_edits` + `time_entries_net` view (migration 014), nav clock, `/clock`, FL Clock PWA, Team > Timesheets. Login now returns to `?next=`.
+3. 013: revoke anon execute on SECURITY DEFINER functions; pin search_path.
+4. Cal.com stage 2: webhook, call history, unmatched calls (012).
+5. Cal.com stage 1: booking links, Book a call, read-only Team directory.
+6. Contacts: auto-grouping, manual merge/unmerge, inline editing (011).
+7. Branch-colored Kanban card borders.
+8. Build Value / Subscription MRR replace legacy Value in the UI.
+9. Stripe Piece 1: Deposit/Build invoices + `invoice.paid` webhook (010).
+10. Two-level nav: Projects parent tab with branch sub-tabs.
 
 ## Stack & infra
 
@@ -159,9 +160,13 @@ Initial team (email pattern `firstname@fullylaunched.com`). This is the starting
 
 Each needs a Supabase login account (Add User, manual) before the app is handoff-ready.
 
+### Identity rule (migration 016)
+
+Every role check uses one rule: the signed-in auth user (`auth.uid()`), with a **confirmed** email, whose email matches a `team_members.email` **case-insensitively**. `is_team_member()`, `is_admin()`, `is_admin_or_manager()`, `current_team_member_id()` and the app's `getCurrentTeamMember()` (`lib/auth.ts`, via `current_team_member_id()`) all apply it, so a roster email stored with different capitalization still works. Grants (016): functions the app or a policy calls are executable by `authenticated` only; trigger functions have no execute grants (triggers don't need them); `time_entries_net` is select-only; CRM tables have no truncate/references/trigger for anon/authenticated (select/insert/update/delete left to RLS).
+
 ### Transactions RLS
 
-Unlike most tables (blanket "authenticated = full access"), `transactions` select/insert/update/delete is restricted by the `admin only access` policy to sessions where `auth.jwt() ->> 'email'` matches a `team_members.email` row with `role = 'Admin'`. Direct API access is blocked for non-Admins even if the frontend check is bypassed. Frontend also hides the tab and `/transactions` redirects non-Admins to `/dashboard` server-side (belt-and-suspenders, not the real gate).
+Unlike most tables, `transactions` select/insert/update/delete is restricted by the `admin only access` policy to `public.is_admin()` (identity rule above, role Admin). Direct API access is blocked for non-Admins even if the frontend check is bypassed. Frontend also hides the tab and `/transactions` redirects non-Admins to `/dashboard` server-side (belt-and-suspenders, not the real gate).
 
 ### Project delete (migrations 006, 007)
 
