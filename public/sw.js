@@ -7,7 +7,7 @@
 //
 // Caching is skipped entirely on localhost.
 
-const CACHE = "fl-static-v2";
+const CACHE = "fl-static-v3";
 const CACHE_STATIC =
   self.location.hostname !== "localhost" &&
   self.location.hostname !== "127.0.0.1";
@@ -21,7 +21,8 @@ function isCacheable(url) {
 
 self.addEventListener("install", () => self.skipWaiting());
 
-// Drops any older cache (v1 also held /_next/static chunks).
+// Drops any older cache (v1 also held /_next/static chunks; v3 = renamed
+// -v2 icons).
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches

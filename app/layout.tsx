@@ -22,7 +22,7 @@ export const metadata: Metadata = {
   // steps.
   manifest: "/manifest.json",
   appleWebApp: { capable: true, title: "FL Clock" },
-  icons: { apple: "/icons/apple-touch-icon.png" },
+  icons: { apple: "/icons/apple-touch-icon-v2.png" },
 };
 
 export const viewport: Viewport = {
