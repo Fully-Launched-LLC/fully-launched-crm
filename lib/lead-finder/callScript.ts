@@ -41,6 +41,23 @@ export function pitchesFor(L: ScannedPlace): PitchKey[] {
   return list;
 }
 
+// E-commerce leads already sell online (CRM rule, Nov 4), so the hook names
+// where they sell and where they don't yet.
+const MARKETS = ["Shopify", "Etsy", "Faire", "Amazon", "eBay"];
+function orList(items: string[]): string {
+  return items.length <= 1 ? items.join("") : items.slice(0, -1).join(", ") + " or " + items[items.length - 1];
+}
+function andList(items: string[]): string {
+  return items.length <= 1 ? items.join("") : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+}
+function ecomHook(L: ScannedPlace): string {
+  const on = L.marketplaces ?? [];
+  if (!on.length) return "I noticed you’re already selling online. A lot of shops like yours grow fastest by adding more marketplaces.";
+  const missing = MARKETS.filter((m) => !on.includes(m));
+  return "I noticed you’re selling on " + andList(on) + "." +
+    (missing.length ? " A lot of shops like yours grow fast by adding " + orList(missing.slice(0, 3)) + "." : "");
+}
+
 function firstName(full: string | null): string | null {
   return full ? full.split(" ")[0] : null;
 }
@@ -106,7 +123,7 @@ export function buildCallScript(L: ScannedPlace, speed: PageSpeed | null, recomm
       hook:
         L.shopify && L.shopify.products
           ? "I was looking at your Shopify store. You’ve got " + L.shopify.products + (L.shopify.capped ? "+" : "") + " products, but " + (L.shopify.noPhoto ? L.shopify.noPhoto + " have no photo and " : "") + L.shopify.thinDescription + " have very short descriptions. That makes it hard for people to buy, and hard for Google to show them."
-          : "I noticed " + (L.tags.ecom[0] || "you don’t have an online store").toLowerCase() + ". A lot of shops like yours are getting a big share of sales online now.",
+          : ecomHook(L),
       questions: ["How much of your business comes from online orders right now?", "Have you thought about selling on Etsy, Amazon or Faire?", "Who handles product photos and listings today?"],
       pitch: "We set up and optimize online stores and marketplace listings (photos, descriptions, the works) so your products sell while the shop is closed.",
       ...common,

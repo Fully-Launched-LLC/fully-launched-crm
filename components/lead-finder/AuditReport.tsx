@@ -222,6 +222,7 @@ function Report({
     ],
     ["Social media", L.socials.length ? L.socials.join(", ") : hasSite ? "No links found on the website" : "Not checked"],
     ["Online store", L.store ? L.store : hasSite ? "None found" : "Not checked"],
+    ["Sells on", L.marketplaces === undefined ? "Not checked" : L.marketplaces.length ? L.marketplaces.join(", ") : hasSite ? "No marketplaces found" : "Not checked"],
     ["Online booking", L.hasBooking == null ? "Not checked" : L.hasBooking ? "Yes" : "None found"],
     ["Software spotted", L.tech.length ? L.tech.join(", ") : "None spotted"],
     ["Paid ads", L.ads.length ? L.ads.join(", ") : "None detected"],

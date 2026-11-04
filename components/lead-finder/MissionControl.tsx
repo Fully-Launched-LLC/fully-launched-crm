@@ -210,13 +210,13 @@ export default function MissionControl({
     const list = onlyChecked ? checkedRows : visible;
     if (!list.length) return;
     const headers = ["Priority", "Lead Score", "Business Name", "Category", "Address", "Phone", "Google Rating", "Reviews", "Website", "Website Status",
-      "Possible Owner", "Emails", "Contact Page", "Social Links Found", "Online Store Found", "Software Used", "Uses ServiceTitan", "Runs Ads",
+      "Possible Owner", "Emails", "Contact Page", "Social Links Found", "Online Store Found", "Marketplaces", "Software Used", "Uses ServiceTitan", "Runs Ads",
       "Other Signals", "Services Needed", "Website Reasons", "Social Reasons", "E-commerce Reasons", "AI Reasons", "Pipeline Status", "Google Maps Link"];
     const rows = list.map((r) => {
       const l = r.place;
       const st = statusOf(r);
       return [l.priority, l.score, l.name, l.category, l.address, l.phone, l.rating, l.reviews, l.website, l.websiteStatus,
-        l.ownerName || "", (l.emails || []).join("; "), l.contactPage || "", (l.socials || []).join("; "), l.store || "", (l.tech || []).join("; "),
+        l.ownerName || "", (l.emails || []).join("; "), l.contactPage || "", (l.socials || []).join("; "), l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
         l.usesServiceTitan ? "Yes" : "", (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
         l.tags.website.join("; "), l.tags.social.join("; "), l.tags.ecom.join("; "), l.tags.ai.join("; "), st ? STATUS_TEXT[st] : "Not in Leads", l.mapsUrl];
     });
@@ -455,6 +455,9 @@ export default function MissionControl({
                             {l.name}
                           </button>
                           {l.usesServiceTitan && <span className="badge-st">ServiceTitan</span>}
+                          {(l.marketplaces ?? []).map((m) => (
+                            <span key={m} className="badge-mkt">{m}</span>
+                          ))}
                           <div className="meta">
                             {[l.category, city].filter(Boolean).join(" · ")} ·{" "}
                             {!l.website ? (
@@ -572,6 +575,15 @@ function Detail({
           <div className="kicker">Lead detail</div>
           <h3>{l.name}</h3>
           <div className="meta">{[l.category, l.address].filter(Boolean).join(" · ")}</div>
+          {(l.usesServiceTitan || (l.marketplaces ?? []).length > 0) && (
+            <div style={{ marginTop: 6 }}>
+              {l.marketplaces?.length ? <span className="hint">Sells on </span> : null}
+              {(l.marketplaces ?? []).map((m) => (
+                <span key={m} className="badge-mkt">{m}</span>
+              ))}
+              {l.usesServiceTitan && <span className="badge-st">ServiceTitan</span>}
+            </div>
+          )}
         </div>
         <div className="d-score">
           <div>

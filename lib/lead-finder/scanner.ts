@@ -16,7 +16,10 @@ import { priorityScore } from "@/lib/lead-finder/priority";
  *   WEBSITE: no site, a broken site, a Facebook/Linktree page instead of a
  *            real site, not secure, not mobile-friendly, or clearly outdated
  *   SOCIAL:  their website has no links to Instagram / Facebook / TikTok
- *   ECOM:    they sell products but have no online store
+ *   ECOM:    they ALREADY sell online on Shopify, Etsy, Faire, Amazon or
+ *            eBay (marketplace evidence on their site), and aren't a service
+ *            business. CRM rule (Nov 4), replaces Matteo's "sells products
+ *            but has no online store"; see MARKETPLACE_PATTERNS.
  *   AI:      paperwork-heavy industry + busy + no online booking/chat, or
  *            reviews complaining about slow responses / scheduling
  *
@@ -88,16 +91,30 @@ const AI_FIT_WORDS = /hvac|heating|cooling|plumb|electric|roof|contractor|constr
 
 const COMPLAINT_PATTERNS = /never (called|got a call|heard) back|no (one|body) (answered|picked up|called)|didn'?t (call|get) back|never returned|unresponsive|no response|couldn'?t get (through|a hold)|went to voicemail|left (a |several |multiple )?(voicemail|messages)|hard to (schedule|reach|get a hold)|took (forever|weeks) to (schedule|respond|get)|wait(ed)? (for )?(weeks|hours) for (a )?(call|quote|response)|billing (issue|error|mistake)|wrong invoice|lost my (paperwork|order|file)|disorganized|miscommunication/i;
 
-// Google place types that mean "sells physical products".
-const PRODUCT_TYPES = [
-  "bakery", "florist", "winery", "brewery", "liquor_store", "candy_store", "chocolate_shop",
-  "confectionery", "butcher_shop", "farm", "garden_center", "market", "gift_shop", "book_store",
-  "clothing_store", "shoe_store", "jewelry_store", "furniture_store", "home_goods_store", "pet_store",
-  "sporting_goods_store", "bicycle_store", "electronics_store", "hardware_store", "cosmetics_store",
-  "beauty_supply_store", "toy_store", "art_supply", "craft_store", "thrift_store", "antique_store",
-  "coffee_shop", "tea_house", "boutique", "department_store", "discount_store", "store",
+
+// E-commerce (CRM rule, Nov 4): only businesses that already sell on one of
+// these marketplaces get the ecom tag. Evidence from the site scan: Shopify
+// tech/store (detected below), or links to an Etsy shop, Faire, an Amazon
+// storefront, or an eBay store/seller page.
+export const MARKETPLACES = ["Shopify", "Etsy", "Faire", "Amazon", "eBay"] as const;
+const MARKETPLACE_LINKS: [string, RegExp][] = [
+  ["Etsy", /etsy\.com\/(?:[a-z]{2}(?:-[a-z]{2})?\/)?shop\/[a-z0-9]/i],
+  ["Faire", /\bfaire\.com\/[a-z0-9]/i],
+  ["Amazon", /amazon\.com\/(?:stores\/|shops\/|s\?[^"'\s<>]*\bme=|sp\?[^"'\s<>]*\bseller=)/i],
+  ["eBay", /ebay\.com\/(?:str|usr)\/[a-z0-9]/i],
 ];
-const PRODUCT_WORDS = /boutique|bakery|bake shop|florist|flower|candle|soap|jewel|clothing|apparel|gift|chocolate|candy|coffee roast|tea shop|winery|brewery|distillery|meadery|farm|honey|wood ?work|furniture|pottery|ceramic|art studio|print shop|t-?shirt|apparel|vintage|antique|thrift|pet supply|tack shop|outfitter|surf shop|skate shop|bike shop|book ?store|record store|vinyl|toy|craft|yarn|fabric|quilt|sewing/i;
+
+// Service businesses never get the ecom tag, whatever Google's category says.
+const SERVICE_TYPES = [
+  "hvac", "plumber", "electrician", "roofing_contractor", "general_contractor", "contractor",
+  "construction_company", "lawyer", "law_firm", "dentist", "dental_clinic", "doctor", "medical_clinic",
+  "medical_lab", "hospital", "physiotherapist", "chiropractor", "accounting", "tax_preparation",
+  "insurance_agency", "car_repair", "auto_body_shop", "car_wash", "cleaning", "house_cleaning_service",
+  "landscaper", "pest_control", "property_management", "hair_salon", "hair_care", "barber_shop",
+  "beauty_salon", "nail_salon",
+];
+const SERVICE_WORDS =
+  /\b(?:hvac|heating|air condition\w*|plumb\w*|electrician|electrical (?:contractor|service)|roof\w*|contractor|construction|remodel\w*|law firm|lawyer|attorney|legal services|dental|dentist|orthodont\w*|medical|clinic|physician|doctor|chiropract\w*|accountant|accounting|cpa|bookkeep\w*|tax (?:prep\w*|service)|insurance|auto repair|mechanic|collision|body shop|cleaning|janitorial|maid service|landscap\w*|lawn care|pest control|exterminat\w*|property management|salon|barber\w*|hair stylist)\b/i;
 
 // Software a business uses: tells us what we could integrate with / automate.
 const TECH_PATTERNS: [string, RegExp][] = [
@@ -250,21 +267,20 @@ export async function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, i:
   return out;
 }
 
-function looksLikeProductBusiness(place: GooglePlace, searchType: string): boolean {
-  const types = place.types || [];
-  if (types.some((t) => PRODUCT_TYPES.includes(t) || t.endsWith("_store") || t.endsWith("_shop"))) {
-    // Barbers / repair "shops" aren't product sellers.
-    if (!types.some((t) => /barber|hair|beauty_salon|car_repair|auto_repair|nail_salon|repair/.test(t))) return true;
-  }
-  const label = [searchType, place.primaryTypeDisplayName && place.primaryTypeDisplayName.text, place.displayName && place.displayName.text].join(" ");
-  return PRODUCT_WORDS.test(label);
-}
-
 function looksLikeAiFitIndustry(place: GooglePlace, searchType: string): boolean {
   const types = place.types || [];
   if (types.some((t) => AI_FIT_TYPES.includes(t))) return true;
   const label = [searchType, place.primaryTypeDisplayName && place.primaryTypeDisplayName.text, place.displayName && place.displayName.text].join(" ");
   return AI_FIT_WORDS.test(label);
+}
+
+// Any of Google's types, the search type, or Google's display category.
+// Not the business name: "Roofline Flowers" is a florist.
+function looksLikeServiceBusiness(place: GooglePlace, searchType: string): boolean {
+  const types = place.types || [];
+  if (types.some((t) => SERVICE_TYPES.includes(t))) return true;
+  const label = [searchType, place.primaryTypeDisplayName && place.primaryTypeDisplayName.text].join(" ");
+  return SERVICE_WORDS.test(label);
 }
 
 type SiteInfo = {
@@ -277,6 +293,7 @@ type SiteInfo = {
   hasChat: boolean;
   tech: string[];
   ads: string[];
+  marketplaces: string[];
 };
 
 /** Look through the page code for clues. */
@@ -291,6 +308,7 @@ export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInf
     hasChat: false,
     tech: [],
     ads: [],
+    marketplaces: [],
   };
 
   // Newest year that appears next to a © / "copyright".
@@ -312,6 +330,8 @@ export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInf
   }
   for (const [name, re] of TECH_PATTERNS) if (re.test(html)) result.tech.push(name);
   for (const [name, re] of AD_PATTERNS) if (re.test(html)) result.ads.push(name);
+  if (result.store === "Shopify" || result.tech.includes("Shopify")) result.marketplaces.push("Shopify");
+  for (const [name, re] of MARKETPLACE_LINKS) if (re.test(html)) result.marketplaces.push(name);
   result.hasBooking = BOOKING_PATTERNS.some((re) => re.test(html));
   result.hasChat = CHAT_PATTERNS.some((re) => re.test(html));
   return result;
@@ -488,6 +508,9 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
           extra.tech.forEach((t) => {
             if (!info.tech.includes(t)) info.tech.push(t);
           });
+          extra.marketplaces.forEach((m) => {
+            if (!info.marketplaces.includes(m)) info.marketplaces.push(m);
+          });
           info.hasBooking = info.hasBooking || extra.hasBooking;
         }
       }
@@ -526,30 +549,41 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     tags.social.push("No Instagram or TikTok (only " + siteInfo.socials.join(", ") + ")");
   }
 
-  // ---- E-COMMERCE ----
-  const sellsProducts = looksLikeProductBusiness(place, searchType);
-  if (sellsProducts) {
-    if (!website || siteStatus === "Social page only" || siteStatus === "Broken") {
-      tags.ecom.push("Sells products but has no online store");
-    } else if (siteInfo && !siteInfo.store) {
-      tags.ecom.push("Has a website but no online store / ordering");
-    }
-  }
-  if (siteInfo && (siteInfo.store === "Shopify" || siteInfo.tech.includes("Shopify"))) {
-    shopify = await inspectShopify(website, ctx);
-    if (shopify && shopify.products > 0) {
-      const n = shopify.products + (shopify.capped ? "+" : "");
-      const weak = shopify.noPhoto + shopify.thinDescription;
-      const issues: string[] = [];
-      if (shopify.noPhoto) issues.push(shopify.noPhoto + " with no photo");
-      if (shopify.fewPhotos) issues.push(shopify.fewPhotos + " with only 1–2 photos");
-      if (shopify.thinDescription) issues.push(shopify.thinDescription + " with thin descriptions");
-      signals.push("Shopify store: " + n + " products");
-      if (weak >= Math.max(3, shopify.products * 0.25) || shopify.fewPhotos >= shopify.products * 0.5) {
-        tags.ecom.push("Shopify store, " + n + " products: " + issues.join(", "));
+  // ---- E-COMMERCE ---- (CRM rule, Nov 4)
+  // Only businesses that already sell online on Shopify, Etsy, Faire, Amazon
+  // or eBay, and never service businesses. Matteo's Shopify listing check and
+  // "Large catalog" stay as ecom signals. His "no online store" tags are gone.
+  // The Google listing's own website can be the shop (an Etsy shop page, a
+  // myshopify.com store) even when there's no separate site to read.
+  const found = new Set<string>(siteInfo ? siteInfo.marketplaces : []);
+  if (/\.myshopify\.com/i.test(website)) found.add("Shopify");
+  for (const [name, re] of MARKETPLACE_LINKS) if (re.test(website)) found.add(name);
+  const marketplaces = MARKETPLACES.filter((m) => found.has(m));
+  const serviceBusiness = looksLikeServiceBusiness(place, searchType);
+  if (marketplaces.length && !serviceBusiness) {
+    const missing = MARKETPLACES.filter((m) => !marketplaces.includes(m));
+    tags.ecom.push(
+      "Already sells online (" + marketplaces.join(", ") + ")" +
+        (missing.length ? ", not on " + missing.join(", ") + " yet" : "")
+    );
+    if (marketplaces.includes("Shopify")) {
+      shopify = await inspectShopify(website, ctx);
+      if (shopify && shopify.products > 0) {
+        const n = shopify.products + (shopify.capped ? "+" : "");
+        const weak = shopify.noPhoto + shopify.thinDescription;
+        const issues: string[] = [];
+        if (shopify.noPhoto) issues.push(shopify.noPhoto + " with no photo");
+        if (shopify.fewPhotos) issues.push(shopify.fewPhotos + " with only 1–2 photos");
+        if (shopify.thinDescription) issues.push(shopify.thinDescription + " with thin descriptions");
+        signals.push("Shopify store: " + n + " products");
+        if (weak >= Math.max(3, shopify.products * 0.25) || shopify.fewPhotos >= shopify.products * 0.5) {
+          tags.ecom.push("Shopify store, " + n + " products: " + issues.join(", "));
+        }
+        if (shopify.products >= 25) tags.ecom.push("Large catalog (" + n + "), could expand to Amazon / Etsy / Faire");
       }
-      if (shopify.products >= 25) tags.ecom.push("Large catalog (" + n + "), could expand to Amazon / Etsy / Faire");
     }
+  } else if (marketplaces.length) {
+    signals.push("Sells on " + marketplaces.join(", ") + " (service business, not an e-commerce lead)");
   }
 
   // ---- AI / AUTOMATION ----
@@ -630,6 +664,7 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     ownerName,
     contactPage,
     shopify,
+    marketplaces,
     signals,
     complaints: complaints.slice(0, 2).map((t) => t.slice(0, 220)),
     tags,

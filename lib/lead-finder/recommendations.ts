@@ -24,7 +24,15 @@ export function buildRecommendations(lead: ScannedPlace, speed: PageSpeed | null
   if (lead.tags.website.some((t) => /outdated/.test(t))) recs.push({ title: "Refresh an outdated site", why: "Your site hasn’t been updated in years. A modern design builds trust before the first call." });
   if (lead.ads && lead.ads.length && lead.tags.website.length) recs.push({ title: "Stop wasting ad spend", why: `You’re paying for ${lead.ads.join(" and ")}, but the site those ads send people to has problems, so you’re paying for clicks that don’t turn into customers.` });
   if (lead.tags.social.length) recs.push({ title: "Build a social media presence", why: lead.tags.social[0] + ". Consistent posting on Instagram/TikTok keeps you in front of local customers for free." });
-  lead.tags.ecom.forEach((t) => recs.push({ title: /Large catalog/.test(t) ? "Sell on more marketplaces" : "Sell online", why: t + "." }));
+  // E-commerce leads already sell online (CRM rule, Nov 4): the pitch is
+  // better listings and more marketplaces, never "start selling online".
+  const ecomTitles = new Set<string>();
+  lead.tags.ecom.forEach((t) => {
+    const title = /^Shopify store/.test(t) ? "Improve your Shopify listings" : "Sell on more marketplaces";
+    if (ecomTitles.has(title)) return;
+    ecomTitles.add(title);
+    recs.push({ title, why: t + "." });
+  });
   if (lead.tags.ai.length) {
     const st = lead.usesServiceTitan;
     recs.push({

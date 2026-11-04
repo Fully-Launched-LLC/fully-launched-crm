@@ -14,7 +14,8 @@ export type ShopifyInfo = {
 };
 
 // One scanned business. Same fields as Matteo's scanner.js scanPlace()
-// output, plus cid (from mapsUrl) and priority (lib/lead-finder/priority.ts).
+// output, plus cid (from mapsUrl), priority (lib/lead-finder/priority.ts)
+// and marketplaces (CRM e-commerce rule).
 export type ScannedPlace = {
   id: string;
   name: string;
@@ -34,6 +35,9 @@ export type ScannedPlace = {
   ownerName: string | null;
   contactPage: string | null;
   shopify: ShopifyInfo | null;
+  // Marketplaces the scan found them selling on (Shopify, Etsy, Faire,
+  // Amazon, eBay). Missing on results scanned before Nov 4.
+  marketplaces?: string[];
   signals: string[];
   complaints: string[];
   tags: ScanTags;
