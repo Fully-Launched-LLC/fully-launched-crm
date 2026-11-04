@@ -47,3 +47,65 @@ export function relativeTime(iso: string | null, now: number = Date.now()): stri
   if (d < 60) return `${d}d ago`;
   return `${Math.round(d / 30)}mo ago`;
 }
+
+// leads.source (migration 018 check constraint). Change both together.
+export const LEAD_SOURCES = [
+  "lead_finder",
+  "manual",
+  "referral",
+  "personal_network",
+  "csv_import",
+  "etsy",
+  "apify",
+  "grokbot",
+  "claude",
+  "happenstance",
+  "gojiberry",
+  "heyreach",
+] as const;
+export type LeadSource = (typeof LEAD_SOURCES)[number];
+
+export const LEAD_SOURCE_LABELS: Record<LeadSource, string> = {
+  lead_finder: "Lead Finder",
+  manual: "Manual",
+  referral: "Referral",
+  personal_network: "Personal network",
+  csv_import: "CSV import",
+  etsy: "Etsy",
+  apify: "Apify",
+  grokbot: "GrokBot",
+  claude: "Claude research",
+  happenstance: "Happenstance",
+  gojiberry: "Gojiberry",
+  heyreach: "HeyReach",
+};
+
+export const sourceLabel = (s: string | null | undefined) =>
+  (s && LEAD_SOURCE_LABELS[s as LeadSource]) || s || "";
+
+// lead_touches.outcome / direction (migration 017).
+export const TOUCH_OUTCOMES = [
+  "sent",
+  "no_answer",
+  "no_reply",
+  "replied",
+  "interested",
+  "not_interested",
+  "bad_fit",
+  "bounced",
+  "meeting_booked",
+  "meeting_held",
+] as const;
+export const TOUCH_OUTCOME_LABELS: Record<string, string> = {
+  sent: "Sent",
+  no_answer: "No answer",
+  no_reply: "No reply",
+  replied: "Replied",
+  interested: "Interested",
+  not_interested: "Not interested",
+  bad_fit: "Bad fit",
+  bounced: "Bounced",
+  meeting_booked: "Meeting booked",
+  meeting_held: "Meeting held",
+};
+export const TOUCH_CHANNELS = Object.keys(TOUCH_CHANNEL_LABELS);

@@ -12,7 +12,7 @@ import {
 import { googleLocate, googleTextSearch, LeadFinderConfigError, type GooglePlace } from "@/lib/lead-finder/google";
 import { mapLimit, scanPlace, SCAN_CONCURRENCY } from "@/lib/lead-finder/scanner";
 import { leadFromScan } from "@/lib/lead-finder/toLead";
-import { loadLeadIndex, keysOf, upsertLeads, type UpsertSummary } from "@/lib/leads/upsert";
+import { findLeadMatches, upsertLeads, type UpsertSummary } from "@/lib/leads/upsert";
 import type {
   ExistingLead,
   LeadFinderRun,
@@ -377,23 +377,38 @@ async function scannedResults(supabase: SupabaseClient, runId: string): Promise<
   return rows;
 }
 
-// Every result is checked against existing leads (place id, cid, email,
-// domain, phone; lib/leads/match.ts) so nobody re-adds or re-contacts one.
+// Every result is checked against existing leads with the database's match
+// rule (find_lead_matches, migration 018: place id, cid, email, domain,
+// phone, chain rule) so nobody re-adds or re-contacts one.
 export async function runResults(supabase: SupabaseClient, runId: string): Promise<RunResult[]> {
-  const [rows, index] = await Promise.all([scannedResults(supabase, runId), loadLeadIndex(supabase)]);
-
-  const matches = rows.map((r) => {
-    const p = r.payload;
-    return index.find(
-      keysOf({
+  const rows = await scannedResults(supabase, runId);
+  const found = await findLeadMatches(
+    supabase,
+    rows.map((r) => {
+      const p = r.payload;
+      return {
         google_place_id: p.id,
-        external_ids: p.cid ? { cid: p.cid } : {},
-        email: p.emails?.[0],
-        website: p.website,
+        external_ids: p.cid ? { cid: p.cid } : null,
+        email: p.emails?.[0] ?? null,
+        website: p.website || null,
         phone: p.phone !== "No phone listed" ? p.phone : null,
-      })
-    );
-  });
+      };
+    })
+  );
+
+  // The matched leads' current status, owner and last touch.
+  type LeadRow = { id: string; company: string | null; status: string; owner: string | null; last_touch_at: string | null };
+  const ids = Array.from(new Set(found.filter(Boolean).map((m) => m!.leadId)));
+  const byId = new Map<string, LeadRow>();
+  for (let i = 0; i < ids.length; i += 100) {
+    const { data, error } = await supabase
+      .from("leads")
+      .select("id, company, status, owner, last_touch_at")
+      .in("id", ids.slice(i, i + 100));
+    if (error) throw new HttpError(500, error.message);
+    (data ?? []).forEach((l) => byId.set(l.id, l as LeadRow));
+  }
+  const matches = found.map((m) => (m && byId.has(m.leadId) ? { row: byId.get(m.leadId)!, on: m.matchedOn } : null));
 
   // Last touch channel for the leads that matched.
   const leadIds = Array.from(new Set(matches.filter(Boolean).map((m) => m!.row.id)));

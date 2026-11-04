@@ -26,6 +26,7 @@ import ConfirmDialog from "@/components/ConfirmDialog";
 import ChannelsField from "@/components/ChannelsField";
 import BookCallSection from "@/components/BookCallSection";
 import CallHistory from "@/components/CallHistory";
+import LeadHistory, { type ProjectLeadHistory } from "@/components/LeadHistory";
 import type { Call } from "@/lib/calls";
 import { branchChangePatch } from "@/lib/channels";
 import {
@@ -80,6 +81,7 @@ export default function ProjectDetail({
   stripeDashboardBase,
   currentMemberId,
   calls,
+  leadHistory,
 }: {
   initialProject: Project;
   teamMembers: TeamMember[];
@@ -94,6 +96,8 @@ export default function ProjectDetail({
   currentMemberId: string | null;
   // Cal.com calls linked to this project.
   calls: Call[];
+  // The lead this project came from (Move to Interested), if any.
+  leadHistory: ProjectLeadHistory | null;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
@@ -506,6 +510,12 @@ export default function ProjectDetail({
       <div className="mt-6">
         <CallHistory calls={calls} teamMembers={teamMembers} />
       </div>
+
+      {leadHistory && (
+        <div className="mt-6">
+          <LeadHistory history={leadHistory} teamMembers={teamMembers} />
+        </div>
+      )}
 
       <div className="mt-6">
         <ProjectTasksManager

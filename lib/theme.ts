@@ -211,3 +211,6 @@ export const LEAD_STATUS_COLORS: Record<
 
 // Lead Finder: ServiceTitan badge and the website-status warning text.
 export const SERVICETITAN_BADGE = "bg-tan text-accent border border-tan";
+
+// Leads list: Wheaton alum badge.
+export const WHEATON_BADGE = "border border-accent text-accent";

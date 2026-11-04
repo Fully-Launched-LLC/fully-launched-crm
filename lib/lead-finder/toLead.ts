@@ -65,6 +65,7 @@ export function leadFromScan(
       emails: p.emails,
       contactPage: p.contactPage,
       shopify: p.shopify,
+      marketplaces: p.marketplaces ?? [],
       complaints: p.complaints,
       hours: p.hours,
     },
