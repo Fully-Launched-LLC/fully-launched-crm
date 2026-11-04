@@ -31,6 +31,17 @@ export async function updateSession(request: NextRequest) {
 
   const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
 
+  // API calls get a 401, not a redirect: a fetch() would follow the redirect
+  // to the login page's HTML (a 307 even re-POSTs to it) and the caller would
+  // see a JSON parse error instead of "signed out". Client code treats 401 as
+  // "refresh the session and retry" (lib/lead-finder/apiFetch.ts). Browser
+  // navigations to an API URL (e.g. the Lead Finder site preview opened in a
+  // new tab) ask for text/html and still get the login redirect.
+  const isFetch = !(request.headers.get("accept") ?? "").includes("text/html");
+  if (!user && isFetch && request.nextUrl.pathname.startsWith("/api/")) {
+    return NextResponse.json({ error: "Not signed in." }, { status: 401 });
+  }
+
   if (!user && !isAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";

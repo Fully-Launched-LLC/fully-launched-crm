@@ -43,6 +43,7 @@ export default function TopNav({
   const tabs = [
     { label: "Dashboard", href: "/dashboard" },
     { label: "Leads", href: "/leads" },
+    { label: "Lead Finder", href: "/lead-finder" },
     { label: "Projects", href: PROJECTS_HREF },
     ...(isAdmin ? [{ label: "Transactions", href: "/transactions" }] : []),
     { label: "Contacts", href: "/contacts" },

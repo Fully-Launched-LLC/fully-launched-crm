@@ -192,3 +192,22 @@ export type Role = "Admin" | "Manager" | "Salesperson";
 // Mirrors the `team_members_role_check` constraint (migration 002), which is
 // the source of truth — if the constraint changes, update this list too.
 export const ROLES: Role[] = ["Admin", "Manager", "Salesperson"];
+
+// Lead status badges (leads.status, migration 017). Same pastel pattern as
+// the stage badges; interested matches the Interested stage (fuchsia),
+// converted matches Complete (green), not interested matches Lost (red).
+export const LEAD_STATUS_COLORS: Record<
+  "new" | "contacted" | "replied" | "interested" | "converted" | "not_interested" | "dead",
+  string
+> = {
+  new: "bg-neutral-50 text-neutral-700 border border-neutral-200",
+  contacted: "bg-sky-50 text-sky-700 border border-sky-200",
+  replied: "bg-amber-50 text-amber-700 border border-amber-200",
+  interested: "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200",
+  converted: "bg-green-50 text-green-700 border border-green-200",
+  not_interested: "bg-red-50 text-red-700 border border-red-200",
+  dead: "bg-stone-100 text-stone-600 border border-stone-300",
+};
+
+// Lead Finder: ServiceTitan badge and the website-status warning text.
+export const SERVICETITAN_BADGE = "bg-tan text-accent border border-tan";

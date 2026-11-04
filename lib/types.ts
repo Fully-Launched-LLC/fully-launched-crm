@@ -6,6 +6,9 @@ export type TeamMember = {
   email: string;
   role: Role;
   booking_link: string | null;
+  // Branches this person leads (migration 017). The Convert to Interested
+  // modal defaults the project owner from it.
+  lead_branches: Branch[];
   created_at: string;
 };
 
@@ -77,6 +80,18 @@ export type Transaction = {
   created_at: string;
 };
 
+// leads (migration 017). `name` is the legacy display column, kept in step
+// with `company` by the leads_normalize trigger; `contact_info` is the
+// original free text, kept but no longer written.
+export type LeadStatus =
+  | "new"
+  | "contacted"
+  | "replied"
+  | "interested"
+  | "converted"
+  | "not_interested"
+  | "dead";
+
 export type Lead = {
   id: string;
   name: string;
@@ -84,6 +99,42 @@ export type Lead = {
   contact_info: string | null;
   notes: string | null;
   created_at: string;
+  company: string | null;
+  contact_name: string | null;
+  title: string | null;
+  email: string | null;
+  phone: string | null;
+  phone_digits: string | null;
+  website: string | null;
+  domain: string | null;
+  address: string | null;
+  city: string | null;
+  state: string | null;
+  industry: string | null;
+  category: string | null;
+  branch_fit: Branch[];
+  wheaton_alum: boolean;
+  source_detail: string | null;
+  external_ids: Record<string, string>;
+  google_place_id: string | null;
+  maps_url: string | null;
+  rating: number | null;
+  review_count: number | null;
+  website_status: string | null;
+  scan_tags: Record<string, unknown> | null;
+  lead_score: number | null;
+  priority_score: number | null;
+  uses_servicetitan: boolean;
+  audit: Record<string, unknown> | null;
+  audit_at: string | null;
+  status: LeadStatus;
+  found_by: string | null;
+  owner: string | null;
+  project_id: string | null;
+  last_touch_at: string | null;
+  next_action: string | null;
+  next_action_at: string | null;
+  updated_at: string;
 };
 
 export type Contact = {

@@ -16,6 +16,6 @@ export async function middleware(request: NextRequest) {
 //   covered by the image-extension rule.
 export const config = {
   matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|api/keep-alive|api/webhooks/|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
+    "/((?!_next/static|_next/image|favicon.ico|api/keep-alive|api/webhooks/|manifest\\.json|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp|mp4)$).*)",
   ],
 };
