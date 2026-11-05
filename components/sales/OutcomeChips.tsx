@@ -15,6 +15,7 @@ import {
   type Outcome,
   type OutcomeKey,
 } from "@/lib/sales/outcomes";
+import { resultState, type ResultState } from "@/lib/sales/sections";
 
 // One-click outcomes in three groups (Call result, Email, LinkedIn), in the
 // side preview and the bulk bar. The first click saves;
@@ -30,7 +31,8 @@ export function OutcomeChips({
 }: {
   big?: boolean;
   disabled?: boolean;
-  // Bulk bar: outcomes that need a per-business form (Not available) are left out.
+  // Bulk bar: outcomes that need a per-business form (Not available, Not
+  // interested, Not now, Dead) are left out.
   bulk?: boolean;
   // Set for Not interested businesses and clients: the first click asks
   // ("This business said not interested on Nov 5. Log anyway?").
@@ -63,11 +65,11 @@ export function OutcomeChips({
         <div key={group} className="oc-group">
           <span className="oc-heading">{heading}</span>
           <div className={`oc-chips${big ? " big" : ""}`} role="group" aria-label={heading}>
-            {OUTCOMES.filter((o) => o.group === group && !(bulk && o.needsForm)).map((o) => (
+            {OUTCOMES.filter((o) => o.group === group && !(bulk && o.form)).map((o) => (
               <button
                 key={o.key}
                 type="button"
-                className={`oc${STOP_OUTCOMES.includes(o.key) ? " neg" : ""}${current === o.key ? " current" : ""}`}
+                className={`oc${STOP_OUTCOMES.includes(o.key as DisplayKey) ? " neg" : ""}${current && current === (o.key === "not_now_email" ? "not_now" : o.key) ? " current" : ""}`}
                 aria-pressed={saving === o.key}
                 title={o.label}
                 disabled={disabled || !!saving}
@@ -138,6 +140,7 @@ export function LatestOutcome({
   return (
     <div className="latest">
       <TouchLine t={t} memberName={memberName} />
+      {classifyTouch(t).key === "staff_no" && <div className="staff-no">Front desk said no · owner not reached</div>}
       {t.summary && <div className="latest-note">“{t.summary}”</div>}
     </div>
   );
@@ -146,16 +149,18 @@ export function LatestOutcome({
 // How far along a business is, for dimming results and the default sort:
 // none (never contacted), contacted, stopped (said not interested / bad fit,
 // or already a client: moved to Interested).
-export type ContactState = "none" | "contacted" | "stopped";
+// How far along a business is, for dimming results and the default sort
+// (lib/sales/sections.ts resultState): none (never contacted), contacted
+// (incl. Not now), staff_no (front desk said no, owner not reached: light
+// dim + label), stopped (owner said not interested, or already a client:
+// moved to Interested), dead (dimmed most, sorted last).
+export type ContactState = ResultState;
 
 export function contactState(ex: ExistingLead | null): ContactState {
-  if (!ex) return "none";
-  if (ex.project_id) return "stopped";
-  if (!ex.last_touch) return "none";
-  return STOP_OUTCOMES.includes(classifyTouch(ex.last_touch).key) ? "stopped" : "contacted";
+  return resultState(ex?.last_touch ?? null, ex?.project_id ?? null);
 }
 
-// The confirm question before logging on a stopped business, else null.
+// The confirm question before logging on a stopped or dead business, else null.
 export function stopNotice(ex: ExistingLead | null): string | null {
   if (!ex) return null;
   if (ex.project_id) return "This business is already a client (moved to Interested). Log anyway?";
@@ -164,5 +169,7 @@ export function stopNotice(ex: ExistingLead | null): string | null {
   const k = classifyTouch(t).key;
   if (k === "not_interested") return `This business said not interested on ${shortDate(t.touched_at)}. Log anyway?`;
   if (k === "bad_fit") return `This business was marked a bad fit on ${shortDate(t.touched_at)}. Log anyway?`;
+  if (k === "dead")
+    return `This business was marked dead${t.details?.dead_reason ? ` (${t.details.dead_reason.toLowerCase()})` : ""} on ${shortDate(t.touched_at)}. Log anyway?`;
   return null;
 }

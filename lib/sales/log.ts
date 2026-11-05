@@ -268,3 +268,25 @@ export async function zeroRowsReason(supabase: SupabaseClient, leadId: string): 
     ? "Not saved. Only the team member it's assigned to (or an Admin/Manager) can change this."
     : "Not saved: this business record no longer exists (it was deleted). Reload the page.";
 }
+
+// Next action on a record (Not now's "Revisit" date, Dead clears it). A leads
+// update, so the 017 RLS rule applies; returns an error message or null.
+export async function setNextAction(
+  supabase: SupabaseClient,
+  leadId: string,
+  next_action: string | null,
+  next_action_at: string | null
+): Promise<string | null> {
+  const { data, error } = await supabase.from("leads").update({ next_action, next_action_at }).eq("id", leadId).select("id");
+  if (error) return error.message;
+  if (!data?.length) return zeroRowsReason(supabase, leadId);
+  return null;
+}
+
+// 9:00 local, `months` from today.
+export function monthsFromNow(months: number): Date {
+  const d = new Date();
+  d.setMonth(d.getMonth() + months);
+  d.setHours(9, 0, 0, 0);
+  return d;
+}

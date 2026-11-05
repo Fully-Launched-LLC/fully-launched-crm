@@ -35,6 +35,9 @@ export type OutcomeToastInput = {
   onUndone: (restored: { key: string; existing: ExistingLead | null }[]) => void;
   // Called after the note is saved on the touches.
   onNote: (note: string) => void;
+  // A one-click suggestion (e.g. "Move to Not now for 3 months?"); run
+  // returns an error message or null.
+  suggest?: { text: string; label: string; run: () => Promise<string | null> };
   // Offer a follow-up; onSet gets the records it was set on.
   followUp?: { kind: "call" | "email" | "linkedin"; onSet: (leadIds: string[], nextAction: string, at: string) => void };
 };
@@ -83,11 +86,12 @@ export function OutcomeToastProvider({ children, wrapClassName }: { children: Re
   const plain = !!toast && toast.saved.length === 0;
   const canUndo = !!toast && !plain && now - toast.at < UNDO_MS;
   const offerFollow = !!toast?.followUp && !followDone;
+  const offerSuggest = !!toast?.suggest && !followDone;
   useEffect(() => {
     if (!toast || noteOpen || busy || picking) return;
-    const life = plain ? 2000 : offerFollow ? FOLLOW_UP_MS : UNDO_MS + 2000;
+    const life = plain ? 2000 : offerFollow || offerSuggest ? FOLLOW_UP_MS : UNDO_MS + 2000;
     if (now - toast.at > life) setToast(null);
-  }, [toast, noteOpen, busy, picking, now, plain, offerFollow]);
+  }, [toast, noteOpen, busy, picking, now, plain, offerFollow, offerSuggest]);
 
   async function setFollowUp(when: number | string) {
     if (!toast?.followUp || busy) return;
@@ -173,6 +177,28 @@ export function OutcomeToastProvider({ children, wrapClassName }: { children: Re
               </button>
             </div>
           </div>
+          {toast.suggest && !followDone && (
+            <div className="oc-follow">
+              <span className="hint">{toast.suggest.text}</span>
+              <button
+                type="button"
+                className="btn"
+                disabled={busy}
+                onClick={async () => {
+                  if (!toast.suggest) return;
+                  setBusy(true);
+                  const err = await toast.suggest.run();
+                  setBusy(false);
+                  if (err) return setMsg({ tone: "error", text: err });
+                  setFollowDone(true);
+                  setMsg({ tone: "ok", text: "Done." });
+                  setToast((t) => (t ? { ...t, at: Math.min(t.at, Date.now() - UNDO_MS) } : t));
+                }}
+              >
+                {toast.suggest.label}
+              </button>
+            </div>
+          )}
           {offerFollow && (
             <div className="oc-follow">
               <span className="hint">Follow up ({toast.followUp!.kind === "linkedin" ? "LinkedIn" : toast.followUp!.kind}):</span>

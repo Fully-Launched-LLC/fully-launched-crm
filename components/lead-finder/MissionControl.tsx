@@ -115,7 +115,7 @@ export default function MissionControl({
     [withOverrides, svc, mode]
   );
   const pool = current;
-  const STATE_RANK: Record<ContactState, number> = { none: 0, contacted: 1, stopped: 2 };
+  const STATE_RANK: Record<ContactState, number> = { none: 0, contacted: 1, staff_no: 1, stopped: 2, dead: 3 };
 
   const test = (TABS.find((t) => t[0] === tab) ?? TABS[0])[2];
   const needle = q.trim().toLowerCase();
@@ -426,7 +426,9 @@ export default function MissionControl({
                     return (
                       <tr
                         key={r.google_place_id}
-                        className={`lead${isSel ? " sel" : ""}${state === "contacted" ? " touched" : state === "stopped" ? " touched stopped" : ""}`}
+                        className={`lead${isSel ? " sel" : ""}${
+                          state === "contacted" ? " touched" : state === "staff_no" ? " touched light" : state === "stopped" ? " touched stopped" : state === "dead" ? " touched dead" : ""
+                        }`}
                         onClick={() => open(r.google_place_id)}
                       >
                         <td onClick={(e) => e.stopPropagation()}>

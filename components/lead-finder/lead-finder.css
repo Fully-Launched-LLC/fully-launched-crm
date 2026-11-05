@@ -414,3 +414,11 @@
 .lf-root table.searches td.s-when{font-size:12.5px;color:var(--muted);}
 .lf-root table.searches td.s-actions{text-align:right;}
 .lf-root table.searches .s-btns{display:flex;gap:6px;justify-content:flex-end;}
+/* Front desk said no (owner not reached): lighter dim; Dead: dimmest. */
+.lf-root tr.lead.light td{opacity:.8;}
+.lf-root tr.lead.dead td{opacity:.25;}
+.lf-root .staff-no{margin-top:3px;font-size:12px;font-weight:600;color:var(--warn);}
+.lf-root .talked-to{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-bottom:8px;}
+.lf-root .tabs.sections{flex-wrap:wrap;}
+.lf-root .row-actions{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:6px;}
+.lf-root .row-actions .staff-no{flex-basis:100%;}

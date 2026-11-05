@@ -9,43 +9,42 @@ import { ownerNameOf } from "@/lib/sales/owner";
 import { BRANCHES, type Branch } from "@/lib/theme";
 import { LEAD_LIST_COLUMNS } from "@/lib/leads/list";
 import { placeFromLead, resultFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
-import { BRANCH_TAG, OUTCOMES, SALES_SOURCES, classifyTouch, type DisplayKey, type LatestTouch } from "@/lib/sales/outcomes";
+import { BRANCH_TAG, SALES_SOURCES, classifyTouch, outcomeByKey, type LatestTouch, type OutcomeKey } from "@/lib/sales/outcomes";
+import { SECTIONS, sectionsFor, summarizeTouches, type SectionKey, type TouchSummary } from "@/lib/sales/sections";
+import { logOutcome, setNextAction } from "@/lib/sales/log";
+import { linkedinPeopleSearch } from "@/lib/sales/owner";
+import { useOutcomeToast } from "@/components/sales/OutcomeToast";
+import { useSalesFlags } from "@/components/sales/SalesFlags";
 import Dropdown from "@/components/lead-finder/Dropdown";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import { LatestOutcome } from "@/components/sales/OutcomeChips";
 import UnmatchedMeetings from "@/components/sales/UnmatchedMeetings";
 import { runsOnText } from "@/lib/lead-finder/software";
 
-// "Follow-ups due": next_action_at today or earlier (viewer's day), sorted by
-// due date. The Sales nav badge links here with ?due=1 (person: Mine).
-function endOfToday(): number {
-  const d = new Date();
-  d.setHours(23, 59, 59, 999);
-  return d.getTime();
-}
-const isDue = (r: { lead: { next_action_at: string | null } }) =>
-  !!r.lead.next_action_at && new Date(r.lead.next_action_at).getTime() <= endOfToday();
+// Sales > History > Businesses: every Sales business (leads with source in
+// SALES_SOURCES; legacy outreach never shows), split into sections
+// (lib/sales/sections.ts) shown as tabs with counts. Mine / All (assigned
+// to me) applies to every section, with search, branch and dates (by the
+// latest outcome). Default section: Follow up today if it has rows, else
+// In progress. The Sales nav badge links here with ?due=1.
 
-// Sales > History: every Sales business (leads with source in
-// SALES_SOURCES; legacy outreach never shows), latest outcome first.
-// "Person" and the date range go by the latest outcome (who logged it,
-// when); a business with no outcome yet goes by who found it and when.
-
-type Row = { lead: SalesLeadRow; latest: LatestTouch | null };
+type Row = {
+  lead: SalesLeadRow;
+  latest: LatestTouch | null;
+  summary: TouchSummary;
+  isClient: boolean;
+  sections: SectionKey[];
+};
 
 const PAGE = 1000;
+// Projects at these stages count as clients (the Clients section).
+const CLIENT_STAGES = ["Signed", "In Progress", "Complete", "Subscriber"];
 
-function personOf(r: Row) {
-  return r.latest?.touched_by ?? r.lead.found_by;
-}
 function whenOf(r: Row) {
   return r.latest?.touched_at ?? r.lead.created_at;
 }
-function outcomeOf(r: Row): DisplayKey | "moved" | "none" {
-  if (r.lead.project_id) return "moved";
-  if (!r.latest) return "none";
-  return classifyTouch(r.latest).key;
-}
+const digits10 = (p: string | null | undefined) => (p ?? "").replace(/\D/g, "").slice(-10);
+
 // YYYY-MM-DD of an ISO time in the viewer's timezone (date inputs are local).
 function localDay(iso: string) {
   const d = new Date(iso);
@@ -67,13 +66,17 @@ export default function SalesHistory({
   initialDue: boolean;
   onSelect: (leadId: string | null) => void;
 }) {
+  const toast = useOutcomeToast();
+  const flags = useSalesFlags();
   const supabase = useMemo(() => createClient(), []);
   const [rows, setRows] = useState<Row[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialLeadId);
-  const [outcome, setOutcome] = useState("all");
-  const [person, setPerson] = useState(initialDue ? "mine" : "all");
-  const [dueOnly, setDueOnly] = useState(initialDue);
+  // null until rows load: then Follow up today if it has rows, else In progress.
+  const [section, setSection] = useState<SectionKey | null>(initialDue ? "follow_up" : null);
+  const [who, setWho] = useState<"mine" | "all">("mine");
+  const [followFor, setFollowFor] = useState<string | null>(null); // "Set follow-up" open on this row
+  const [rowMsg, setRowMsg] = useState<{ id: string; text: string } | null>(null);
   const [branch, setBranch] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -96,8 +99,8 @@ export default function SalesHistory({
       leads.push(...((data ?? []) as unknown as SalesLeadRow[]));
       if ((data ?? []).length < PAGE) break;
     }
-    // Latest touch per Sales business (newest first, first one wins).
-    const latest = new Map<string, LatestTouch>();
+    // Every touch per Sales business, newest first.
+    const touches = new Map<string, LatestTouch[]>();
     for (let p = 0; ; p += PAGE) {
       const { data, error: e } = await supabase
         .from("lead_touches")
@@ -107,20 +110,41 @@ export default function SalesHistory({
         .range(p, p + PAGE - 1);
       if (e) return setError(e.message);
       (data ?? []).forEach((t) => {
-        if (!latest.has(t.lead_id))
-          latest.set(t.lead_id, {
-            channel: t.channel,
-            direction: t.direction,
-            outcome: t.outcome,
-            summary: t.summary,
-            touched_by: t.touched_by,
-            touched_at: t.touched_at,
-            details: t.details ?? null,
-          });
+        if (!touches.has(t.lead_id)) touches.set(t.lead_id, []);
+        touches.get(t.lead_id)!.push({
+          channel: t.channel,
+          direction: t.direction,
+          outcome: t.outcome,
+          summary: t.summary,
+          touched_by: t.touched_by,
+          touched_at: t.touched_at,
+          details: t.details ?? null,
+        });
       });
       if ((data ?? []).length < PAGE) break;
     }
-    setRows(leads.map((lead) => ({ lead, latest: latest.get(lead.id) ?? null })));
+    // Clients: a project at a client stage with the same company name,
+    // email or phone.
+    const { data: projects } = await supabase.from("projects").select("client_name, email, phone, stage").in("stage", CLIENT_STAGES);
+    const names = new Set((projects ?? []).map((p) => (p.client_name ?? "").trim().toLowerCase()).filter(Boolean));
+    const emails = new Set((projects ?? []).map((p) => (p.email ?? "").trim().toLowerCase()).filter(Boolean));
+    const phones = new Set((projects ?? []).map((p) => digits10(p.phone)).filter((d) => d.length === 10));
+    setRows(
+      leads.map((lead) => {
+        const summary = summarizeTouches(touches.get(lead.id) ?? []);
+        const isClient =
+          names.has((lead.company ?? lead.name ?? "").trim().toLowerCase()) ||
+          (!!lead.email && emails.has(lead.email.trim().toLowerCase())) ||
+          phones.has(digits10(lead.phone));
+        return {
+          lead,
+          latest: summary.latest,
+          summary,
+          isClient,
+          sections: sectionsFor({ summary, projectId: lead.project_id, nextActionAt: lead.next_action_at, isClient }),
+        };
+      })
+    );
   }, [supabase]);
 
   useEffect(() => {
@@ -128,13 +152,11 @@ export default function SalesHistory({
   }, [load]);
 
   const needle = q.trim().toLowerCase();
-  const visible = useMemo(
+  // Mine / All, branch, dates, search: apply to every section and its count.
+  const base = useMemo(
     () =>
       (rows ?? [])
-        .filter((r) => outcome === "all" || outcomeOf(r) === outcome)
-        .filter((r) => !dueOnly || isDue(r))
-        // With Follow-ups due, "person" means who it's assigned to (whose follow-up it is).
-        .filter((r) => person === "all" || (dueOnly ? r.lead.owner : personOf(r)) === (person === "mine" ? me?.id : person))
+        .filter((r) => who === "all" || r.lead.owner === me?.id)
         .filter((r) => branch === "all" || (r.lead.branch_fit ?? []).includes(branch as Branch))
         .filter((r) => {
           if (!from && !to) return true;
@@ -147,14 +169,75 @@ export default function SalesHistory({
             [r.lead.company, r.lead.name, r.lead.address, r.lead.phone, r.lead.city]
               .filter(Boolean)
               .some((v) => String(v).toLowerCase().includes(needle))
-        )
-        .sort((a, b) =>
-          dueOnly
-            ? (a.lead.next_action_at ?? "").localeCompare(b.lead.next_action_at ?? "")
-            : whenOf(b).localeCompare(whenOf(a))
         ),
-    [rows, outcome, person, branch, from, to, needle, me?.id, dueOnly]
+    [rows, who, branch, from, to, needle, me?.id]
   );
+  const counts = useMemo(() => {
+    const c = {} as Record<SectionKey, number>;
+    SECTIONS.forEach(([k]) => (c[k] = base.filter((r) => r.sections.includes(k)).length));
+    return c;
+  }, [base]);
+  // Default section once rows are in.
+  useEffect(() => {
+    if (rows && section === null) setSection(counts.follow_up > 0 ? "follow_up" : "in_progress");
+  }, [rows, section, counts.follow_up]);
+  const tab: SectionKey = section ?? "follow_up";
+  const at = (r: Row) => r.lead.next_action_at ?? "";
+  const visible = useMemo(
+    () =>
+      base
+        .filter((r) => r.sections.includes(tab))
+        .sort((a, b) =>
+          tab === "follow_up" || tab === "not_now"
+            ? at(a).localeCompare(at(b))
+            : tab === "reach_owner"
+              ? (b.lead.priority_score ?? 0) - (a.lead.priority_score ?? 0)
+              : whenOf(b).localeCompare(whenOf(a))
+        ),
+    [base, tab]
+  );
+
+  // ---- Row actions (No next step, Reach the owner) ----
+  const followLabel = (r: Row) =>
+    r.latest?.channel === "email" ? "Follow up: email" : r.latest?.channel?.startsWith("linkedin") ? "Follow up: LinkedIn" : "Follow up: call";
+  async function setFollowUp(r: Row, when: Date) {
+    if (Number.isNaN(when.getTime())) return;
+    const err = await setNextAction(supabase, r.lead.id, followLabel(r), when.toISOString());
+    setFollowFor(null);
+    if (err) return setRowMsg({ id: r.lead.id, text: err });
+    setRowMsg(null);
+    void load();
+  }
+  const daysFromNow = (n: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + n);
+    d.setHours(9, 0, 0, 0);
+    return d;
+  };
+  async function quickLog(r: Row, key: OutcomeKey) {
+    if (!me) return;
+    const o = outcomeByKey(key);
+    let res;
+    try {
+      res = await logOutcome(
+        supabase,
+        me.id,
+        [{ key: r.lead.id, place: placeFromLead(r.lead), searchType: r.lead.industry, existing: resultFromLead(r.lead, r.latest).existing }],
+        o,
+        r.lead.source_detail ?? ""
+      );
+    } catch (e) {
+      return setRowMsg({ id: r.lead.id, text: (e as Error).message || "Could not save." });
+    }
+    if (res.failed.length) return setRowMsg({ id: r.lead.id, text: res.failed[0].reason });
+    toast.show({
+      text: `${o.label} saved for ${r.lead.company ?? r.lead.name}.`,
+      saved: res.saved,
+      onUndone: () => void load(),
+      onNote: () => void load(),
+    });
+    void load();
+  }
 
   const selectedRow = (rows ?? []).find((r) => r.lead.id === selectedId) ?? null;
   const selected = selectedRow ? resultFromLead(selectedRow.lead, selectedRow.latest) : null;
@@ -167,7 +250,9 @@ export default function SalesHistory({
 
   // A change from the side preview (outcome, note, owner name, next action,
   // moved, undo). null: the record was deleted by Undo.
+  const [savedTick, setSavedTick] = useState(0);
   function applySaved(id: string, ex: ExistingLead | null) {
+    setSavedTick((n) => n + 1);
     setRows((prev) =>
       ex === null
         ? (prev ?? []).filter((r) => r.lead.id !== id)
@@ -188,11 +273,21 @@ export default function SalesHistory({
                     company_linkedin: ex.company_linkedin,
                   },
                   latest: ex.last_touch,
+                  summary: r.summary,
+                  isClient: r.isClient,
+                  sections: r.sections,
                 }
               : r
           )
     );
   }
+  // Sections depend on every touch: refresh quietly after a change.
+  useEffect(() => {
+    if (!rows) return;
+    const t = setTimeout(() => void load(), 600);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedTick]);
   function applyWebScore(id: string, w: WebScoreCache) {
     setRows((prev) =>
       (prev ?? []).map((r) => (r.lead.id === id ? { ...r, lead: { ...r.lead, scan_tags: { ...(r.lead.scan_tags ?? {}), webScore: w } } } : r))
@@ -256,40 +351,19 @@ export default function SalesHistory({
             <div className="tools hist-filters">
               <label className="sr" htmlFor="hist-q">Search businesses</label>
               <input className="field" id="hist-q" type="search" placeholder="Search name, address, phone…" value={q} onChange={(e) => setQ(e.target.value)} />
-              <Dropdown
-                label="Outcome"
-                value={outcome}
-                onChange={setOutcome}
-                options={[
-                  { value: "all", label: "Outcome: all" },
-                  ...OUTCOMES.map((o) => ({ value: o.key, label: o.label })),
-                  { value: "talked", label: "Called (talked), older" },
-                  { value: "bad_fit", label: "Bad fit, older" },
-                  { value: "meeting", label: "Meeting held" },
-                  { value: "moved", label: "Moved to Interested" },
-                  { value: "none", label: "No outcome yet" },
-                ]}
-              />
-              <Dropdown
-                label="Person"
-                value={person}
-                onChange={setPerson}
-                options={[
-                  { value: "all", label: "Person: all" },
-                  ...(me ? [{ value: "mine", label: "Mine" }] : []),
-                  ...members.map((m) => ({ value: m.id, label: m.name })),
-                ]}
-              />
+              <div className="modes" role="tablist" aria-label="Mine or all">
+                {(["mine", "all"] as const).map((k) => (
+                  <button key={k} type="button" role="tab" aria-selected={who === k} onClick={() => setWho(k)}>
+                    {k === "mine" ? "Mine" : "All"}
+                  </button>
+                ))}
+              </div>
               <Dropdown
                 label="Branch"
                 value={branch}
                 onChange={setBranch}
                 options={[{ value: "all", label: "Branch: all" }, ...BRANCHES.map((b) => ({ value: b, label: b }))]}
               />
-              <label className="toggle" style={{ marginLeft: 0 }}>
-                <input type="checkbox" className="chk" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} />
-                Follow-ups due ({(rows ?? []).filter(isDue).length})
-              </label>
               <label className="date-f">
                 <span>From</span>
                 <input className="field" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
@@ -298,6 +372,16 @@ export default function SalesHistory({
                 <span>To</span>
                 <input className="field" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
               </label>
+            </div>
+          </div>
+
+          <div className="toolbar">
+            <div className="tabs sections" role="tablist" aria-label="Sections">
+              {SECTIONS.map(([k, label]) => (
+                <button key={k} type="button" role="tab" className="tab" aria-selected={tab === k} onClick={() => setSection(k)}>
+                  {label} <span className="n">{counts[k]}</span>
+                </button>
+              ))}
             </div>
           </div>
 
@@ -338,6 +422,49 @@ export default function SalesHistory({
                             {l.company ?? l.name}
                           </button>
                           <div className="meta">{[l.category, l.city].filter(Boolean).join(" · ")}</div>
+                          {r.isClient && <span className="badge-mkt" style={{ marginLeft: 0 }}>Client</span>}
+                          {tab === "moved" && l.project_id && (
+                            <div onClick={(e) => e.stopPropagation()}>
+                              <a href={`/project/${l.project_id}`}>Open project</a>
+                            </div>
+                          )}
+                          {tab === "reach_owner" && (
+                            <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                              <div className="staff-no">
+                                Front desk said no
+                                {r.summary.gatekeeper?.name
+                                  ? ` · ${r.summary.gatekeeper.name}${r.summary.gatekeeper.role ? ` (${r.summary.gatekeeper.role})` : ""}`
+                                  : ""}{" "}
+                                · owner not reached
+                              </div>
+                              <a className="btn-mini" href={linkedinPeopleSearch(l.contact_name, l.company ?? l.name)} target="_blank" rel="noopener noreferrer">
+                                Find on LinkedIn
+                              </a>
+                              <button type="button" className="btn-mini" disabled={!me} onClick={() => void quickLog(r, "connection_sent")}>Connection sent</button>
+                              <button type="button" className="btn-mini" disabled={!me} onClick={() => void quickLog(r, "visited")}>Visited</button>
+                              {flags.apollo && (
+                                <button type="button" className="btn-mini" onClick={() => open(l.id)}>Find owner contact</button>
+                              )}
+                            </div>
+                          )}
+                          {tab === "no_next_step" && (
+                            <div className="row-actions" onClick={(e) => e.stopPropagation()}>
+                              {followFor === l.id ? (
+                                <>
+                                  <button type="button" className="btn-mini" onClick={() => void setFollowUp(r, daysFromNow(1))}>Tomorrow</button>
+                                  <button type="button" className="btn-mini" onClick={() => void setFollowUp(r, daysFromNow(3))}>In 3 days</button>
+                                  <button type="button" className="btn-mini" onClick={() => void setFollowUp(r, daysFromNow(7))}>Next week</button>
+                                  <input className="field" type="date" aria-label="Follow-up date" style={{ height: 30, width: "auto" }}
+                                    min={new Date().toISOString().slice(0, 10)}
+                                    onChange={(e) => e.target.value && void setFollowUp(r, new Date(e.target.value + "T09:00:00"))} />
+                                  <button type="button" className="linkbtn" onClick={() => setFollowFor(null)}>Cancel</button>
+                                </>
+                              ) : (
+                                <button type="button" className="btn-mini" onClick={() => setFollowFor(l.id)}>Set follow-up</button>
+                              )}
+                            </div>
+                          )}
+                          {rowMsg?.id === l.id && <div className="bad-text" style={{ fontSize: 12 }}>{rowMsg.text}</div>}
                         </td>
                         <td>
                           {r.latest || l.project_id ? (
@@ -388,7 +515,7 @@ export default function SalesHistory({
                   <tr>
                     <td colSpan={6}>
                       <div className="empty-list">
-                        {rows.length ? "No businesses match these filters." : "Nothing yet. Outcomes logged in Find show up here."}
+                        {rows.length ? "Nothing in this section." : "Nothing yet. Outcomes logged in Find show up here."}
                       </div>
                     </td>
                   </tr>

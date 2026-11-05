@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { Lead, TeamMember } from "@/lib/types";
@@ -16,7 +16,7 @@ import {
   websiteScore,
 } from "@/lib/lead-finder/websiteScore";
 import { canEditLead } from "@/lib/leads/list";
-import { logOutcome, saveBusinessContact, zeroRowsReason } from "@/lib/sales/log";
+import { logOutcome, monthsFromNow, saveBusinessContact, setNextAction, zeroRowsReason } from "@/lib/sales/log";
 import {
   SCAN_TITLE,
   companyLinkedin,
@@ -28,7 +28,8 @@ import {
   ownerNameOf,
 } from "@/lib/sales/owner";
 import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
-import { OUTCOME_CLASS, classifyTouch, outcomeByKey, shortDate, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
+import { DEAD_REASONS, OUTCOME_CLASS, classifyTouch, outcomeByKey, shortDate, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
+import { summarizeTouches } from "@/lib/sales/sections";
 import { OutcomeChips, LatestOutcome, TouchLine, stopNotice } from "@/components/sales/OutcomeChips";
 import DraftEmail from "@/components/sales/DraftEmail";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
@@ -298,10 +299,21 @@ export default function BusinessDetail({
   const [liMsg, setLiMsg] = useState<string | null>(null);
 
   // OutcomeChips: returns an error message or null.
+  // Small prompts for outcomes with a form: who said no, revisit date, dead reason.
+  const [ask, setAsk] = useState<{ o: Outcome; kind: "who_said_no" | "revisit" | "dead" } | null>(null);
+  const [askDate, setAskDate] = useState("");
+  // Optional on call outcomes: who picked up (owner reached or not).
+  const [talkedTo, setTalkedTo] = useState<"owner" | "staff" | null>(null);
+
   async function save(o: Outcome): Promise<string | null> {
-    if (o.needsForm) {
+    if (o.form === "not_available") {
       setNaMsg(null);
       setNaForm({ spoke_with: "", role: "", said: "", email: "" });
+      return null;
+    }
+    if (o.form === "who_said_no" || o.form === "revisit" || o.form === "dead") {
+      setAskDate("");
+      setAsk({ o, kind: o.form });
       return null;
     }
     if (o.opensDraft) {
@@ -311,10 +323,42 @@ export default function BusinessDetail({
     return (await doSave(o)).error;
   }
 
+  // Answers to the prompts.
+  async function saveWhoSaidNo(by: "owner" | "staff") {
+    if (!ask) return;
+    const res = await doSave(ask.o, { details: { said_no_by: by, talked_to: by } });
+    if (!res.error) setAsk(null);
+    else setContactMsg(res.error);
+  }
+  async function saveRevisit(at: Date) {
+    if (!ask || Number.isNaN(at.getTime())) return;
+    const res = await doSave(ask.o);
+    if (res.id === null) return setContactMsg(res.error);
+    setAsk(null);
+    const err = await setNextAction(supabase, res.id, "Revisit", at.toISOString());
+    if (err) setContactMsg("Saved as Not now, but the revisit date wasn't: " + err);
+    else if (latestRef.current) onSaved({ ...latestRef.current, next_action: "Revisit", next_action_at: at.toISOString() });
+  }
+  async function saveDead(reason: string) {
+    if (!ask) return;
+    const res = await doSave(ask.o, { details: { dead_reason: reason } });
+    if (res.id === null) return setContactMsg(res.error);
+    setAsk(null);
+    // A dead business has no next step.
+    if (!(await setNextAction(supabase, res.id, null, null)) && latestRef.current)
+      onSaved({ ...latestRef.current, next_action: null, next_action_at: null });
+  }
+  // The record as last saved here (prompts update it after doSave).
+  const latestRef = useRef<ExistingLead | null>(null);
+
   type SaveResult = { id: string; error: null } | { id: null; error: string };
 
   async function doSave(o: Outcome, extra?: { summary?: string | null; details?: TouchDetails | null }): Promise<SaveResult> {
     if (!me) return { id: null, error: "You need a team member profile to log outcomes." };
+    // "Talked to" applies to call outcomes where someone picked up.
+    if (o.group === "call" && talkedTo && !["no_answer", "left_voicemail", "dead", "not_interested"].includes(o.key))
+      extra = { ...extra, details: { ...(extra?.details ?? {}), talked_to: talkedTo } };
+    if (o.key === "not_available") extra = { ...extra, details: { ...(extra?.details ?? {}), talked_to: "staff" } };
     let res;
     try {
       res = await logOutcome(supabase, me.id, [{ key: l.id, place: l, searchType: r.search_type, existing: ex }], o, sourceDetail, extra);
@@ -324,9 +368,43 @@ export default function BusinessDetail({
     if (res.failed.length) return { id: null, error: res.failed[0].reason };
     const saved = res.saved[0];
     let current = saved.existing;
+    latestRef.current = current;
     onSaved(current);
     setReload((n) => n + 1);
+    setTalkedTo(null);
+    // 5+ outreach attempts with no reply or positive outcome: suggest Not now.
+    const { data: all } = await supabase
+      .from("lead_touches")
+      .select("channel, direction, outcome, summary, touched_by, touched_at, details")
+      .eq("lead_id", current.id)
+      .order("touched_at", { ascending: false });
+    const sum = summarizeTouches((all ?? []) as LatestTouch[]);
+    const lastKey = sum.latest ? classifyTouch(sum.latest).key : null;
+    const suggestNotNow =
+      sum.attemptsWithoutReply >= 5 && !["not_now", "dead", "not_interested", "staff_no", "interested", "booked_call"].includes(lastKey ?? "");
     toast.show({
+      suggest: suggestNotNow
+        ? {
+            text: `${sum.attemptsWithoutReply} tries with no reply.`,
+            label: "Move to Not now for 3 months?",
+            run: async () => {
+              const nn = outcomeByKey(current.last_touch?.channel === "email" ? "not_now_email" : "not_now");
+              let r2;
+              try {
+                r2 = await logOutcome(supabase, me.id, [{ key: l.id, place: l, searchType: r.search_type, existing: current }], nn, sourceDetail);
+              } catch (e) {
+                return (e as Error).message || "Could not save.";
+              }
+              if (r2.failed.length) return r2.failed[0].reason;
+              const at = monthsFromNow(3).toISOString();
+              const err = await setNextAction(supabase, current.id, "Revisit", at);
+              current = { ...r2.saved[0].existing, ...(err ? {} : { next_action: "Revisit", next_action_at: at }) };
+              onSaved(current);
+              setReload((n) => n + 1);
+              return err;
+            },
+          }
+        : undefined,
       text: `${o.label} saved for ${l.name}.`,
       saved: res.saved,
       onUndone: (restored) => {
@@ -619,6 +697,14 @@ export default function BusinessDetail({
 
       <div>
         <div className="sec-title">Log an outcome</div>
+        <div className="talked-to" role="group" aria-label="Talked to">
+          <span className="hint">Talked to (optional, calls):</span>
+          {(["owner", "staff"] as const).map((k) => (
+            <button key={k} type="button" className="oc" aria-pressed={talkedTo === k} onClick={() => setTalkedTo(talkedTo === k ? null : k)}>
+              {k === "owner" ? "Owner" : "Staff"}
+            </button>
+          ))}
+        </div>
         <OutcomeChips
           big
           disabled={!me}
@@ -643,6 +729,47 @@ export default function BusinessDetail({
               <a className="btn" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">Find on LinkedIn</a>
               <button type="button" className="btn" onClick={() => setLiPrompt(null)}>Not now</button>
             </div>
+          </div>
+        )}
+        {ask && (
+          <div className="na-form">
+            {ask.kind === "who_said_no" && (
+              <>
+                <span className="hint"><b style={{ color: "var(--bright)" }}>Not interested.</b> Who said no?</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button type="button" className="btn btn-gold" onClick={() => void saveWhoSaidNo("owner")}>Owner / decision maker</button>
+                  <button type="button" className="btn" onClick={() => void saveWhoSaidNo("staff")}>Front desk / staff</button>
+                </div>
+              </>
+            )}
+            {ask.kind === "revisit" && (
+              <>
+                <span className="hint"><b style={{ color: "var(--bright)" }}>Not now.</b> When should we come back?</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                  {[1, 3, 6].map((m) => (
+                    <button key={m} type="button" className="btn" onClick={() => void saveRevisit(monthsFromNow(m))}>
+                      {m} month{m === 1 ? "" : "s"}
+                    </button>
+                  ))}
+                  <input className="field" type="date" aria-label="Revisit date" style={{ width: "auto" }} value={askDate}
+                    min={new Date().toISOString().slice(0, 10)} onChange={(e) => setAskDate(e.target.value)} />
+                  <button type="button" className="btn btn-gold" disabled={!askDate} onClick={() => void saveRevisit(new Date(askDate + "T09:00:00"))}>
+                    Set date
+                  </button>
+                </div>
+              </>
+            )}
+            {ask.kind === "dead" && (
+              <>
+                <span className="hint"><b style={{ color: "var(--bright)" }}>Dead.</b> Why?</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  {DEAD_REASONS.map((reason) => (
+                    <button key={reason} type="button" className="btn" onClick={() => void saveDead(reason)}>{reason}</button>
+                  ))}
+                </div>
+              </>
+            )}
+            <button type="button" className="linkbtn" style={{ alignSelf: "flex-start" }} onClick={() => setAsk(null)}>Cancel</button>
           </div>
         )}
         {naForm && (

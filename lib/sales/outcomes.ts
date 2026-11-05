@@ -19,7 +19,10 @@ export type OutcomeKey =
   | "visited"
   | "interested"
   | "not_interested"
+  | "not_now"
+  | "dead"
   | "booked_call"
+  | "not_now_email"
   | "emailed"
   | "connection_sent"
   | "connected"
@@ -35,7 +38,8 @@ export const OUTCOME_GROUPS: [OutcomeGroup, string][] = [
 // How a touch reads in rows, History and timelines. Includes outcomes the
 // buttons no longer log (Called (talked), Visited, Bad fit) so older
 // touches still show correctly.
-export type DisplayKey = OutcomeKey | "talked" | "bad_fit" | "meeting" | "other";
+// staff_no: Not interested said by front desk / staff (details.said_no_by).
+export type DisplayKey = Exclude<OutcomeKey, "not_now_email"> | "staff_no" | "talked" | "bad_fit" | "meeting" | "other";
 
 export type Outcome = {
   key: OutcomeKey;
@@ -48,8 +52,12 @@ export type Outcome = {
   outcome: string | null;
   // Opens Move to Interested after saving (when the user may edit).
   opensMove?: boolean;
-  // Opens a small form before saving (who we spoke with). Not in the bulk bar.
-  needsForm?: boolean;
+  // Opens a small form before saving; not offered in the bulk bar.
+  //   not_available: who we spoke with, role, what they said, email
+  //   who_said_no:   Owner / decision maker, or Front desk / staff
+  //   revisit:       revisit date (1, 3, 6 months, pick a date)
+  //   dead:          reason
+  form?: "not_available" | "who_said_no" | "revisit" | "dead";
   // The toast offers a follow-up (next_action "Follow up: call" / "email" / "LinkedIn").
   followUp?: "call" | "email" | "linkedin";
   // Side preview: opens the Draft email modal instead of saving; its "Mark
@@ -65,14 +73,20 @@ export const OUTCOMES: Outcome[] = [
   { key: "no_answer", label: "No answer", group: "call", channel: "cold_call", direction: "outbound", outcome: "no_answer", followUp: "call" },
   { key: "left_voicemail", label: "Left voicemail", group: "call", channel: "voicemail", direction: "outbound", outcome: null, followUp: "call" },
   // Reached someone, not the decision maker. details {spoke_with, role, email}; the note is what they said.
-  { key: "not_available", label: "Not available", group: "call", channel: "cold_call", direction: "outbound", outcome: "not_available", needsForm: true, followUp: "call" },
+  { key: "not_available", label: "Not available", group: "call", channel: "cold_call", direction: "outbound", outcome: "not_available", form: "not_available", followUp: "call" },
   { key: "visited", label: "Visited", group: "call", channel: "in_person", direction: "outbound", outcome: "sent", followUp: "call" },
   { key: "interested", label: "Interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "interested", opensMove: true },
-  { key: "not_interested", label: "Not interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "not_interested" },
+  // details.said_no_by owner | staff (required). Staff + owner not reached -> Reach the owner.
+  { key: "not_interested", label: "Not interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "not_interested", form: "who_said_no" },
+  // Migration 029. Revisit date -> next_action "Revisit" + next_action_at.
+  { key: "not_now", label: "Not now", group: "call", channel: "cold_call", direction: "inbound", outcome: "not_now", form: "revisit" },
+  // Migration 029. details.dead_reason; excluded from every other History section.
+  { key: "dead", label: "Dead", group: "call", channel: "cold_call", direction: "outbound", outcome: "dead", form: "dead" },
   // meeting_booked: the touch trigger sets status interested.
   { key: "booked_call", label: "Booked call", group: "call", channel: "cold_call", direction: "outbound", outcome: "meeting_booked", opensMove: true },
   // EMAIL. details {to}.
   { key: "emailed", label: "Emailed", group: "email", channel: "email", direction: "outbound", outcome: "sent", opensDraft: true, followUp: "email" },
+  { key: "not_now_email", label: "Not now", group: "email", channel: "email", direction: "inbound", outcome: "not_now", form: "revisit" },
   // LINKEDIN
   { key: "connection_sent", label: "Connection sent", group: "linkedin", channel: "linkedin_connect", direction: "outbound", outcome: "sent", asksLinkedin: true, followUp: "linkedin" },
   { key: "connected", label: "Connected", group: "linkedin", channel: "linkedin_connect", direction: "outbound", outcome: "connected", asksLinkedin: true },
@@ -83,8 +97,10 @@ export const outcomeByKey = (k: OutcomeKey) => OUTCOMES.find((o) => o.key === k)
 
 // "Stopped" businesses: shown strongly dimmed in results, and logging on
 // them asks to confirm first (with clients, i.e. moved to Interested).
-// bad_fit: older touches only.
-export const STOP_OUTCOMES: DisplayKey[] = ["not_interested", "bad_fit"];
+// bad_fit: older touches only. Dead is dimmed most and sorted last.
+export const STOP_OUTCOMES: DisplayKey[] = ["not_interested", "bad_fit", "dead"];
+
+export const DEAD_REASONS = ["Wrong number", "Closed", "Bounced email", "Not a real business", "Other"];
 
 export function resolveChannel(o: Outcome, lastChannel: string | null | undefined): string {
   return o.channel === "last" ? lastChannel || "cold_call" : o.channel;
@@ -102,12 +118,23 @@ export type LatestTouch = {
   details?: TouchDetails | null;
 };
 
-export type TouchDetails = { spoke_with?: string; role?: string; email?: string; to?: string };
+export type TouchDetails = {
+  spoke_with?: string;
+  role?: string;
+  email?: string;
+  to?: string;
+  said_no_by?: "owner" | "staff"; // Not interested
+  talked_to?: "owner" | "staff"; // optional on call outcomes
+  dead_reason?: string; // Dead
+};
 
 // A touch back to the outcome that logged it (also reads touches logged
 // before these buttons: Called (talked), Bad fit, voicemail, replied, ...).
-export function classifyTouch(t: Pick<LatestTouch, "channel" | "outcome">): { key: DisplayKey; label: string } {
+export function classifyTouch(t: Pick<LatestTouch, "channel" | "outcome"> & { details?: TouchDetails | null }): { key: DisplayKey; label: string } {
   const o = t.outcome;
+  if (o === "dead") return { key: "dead", label: "Dead" };
+  if (o === "not_now") return { key: "not_now", label: "Not now" };
+  if (o === "not_interested" && t.details?.said_no_by === "staff") return { key: "staff_no", label: "Not interested (front desk)" };
   if (o === "meeting_booked") return { key: "booked_call", label: "Booked call" };
   // Meetings logged from Granola (migration 022): channel meeting, meeting_held.
   if (o === "meeting_held") return { key: "meeting", label: "Meeting held" };
@@ -130,6 +157,9 @@ export function classifyTouch(t: Pick<LatestTouch, "channel" | "outcome">): { ke
 // Badge class (lead-finder.css .st-*).
 export const OUTCOME_CLASS: Record<DisplayKey | "moved", string> = {
   no_answer: "st-new",
+  not_now: "st-new",
+  staff_no: "st-nofit",
+  dead: "st-dead",
   left_voicemail: "st-new",
   not_available: "st-new",
   connection_sent: "st-contacted",
@@ -178,7 +208,11 @@ export function describeTouch(
     ? `spoke with ${d.spoke_with}${d.role ? ` (${d.role})` : ""}`
     : d.to
       ? d.to
-      : null;
+      : d.dead_reason
+        ? d.dead_reason
+        : d.talked_to
+          ? `talked to ${d.talked_to === "owner" ? "the owner" : "staff"}`
+          : null;
   return { lead, outcome, key: c.key, detail, who: memberName(t.touched_by) };
 }
 
