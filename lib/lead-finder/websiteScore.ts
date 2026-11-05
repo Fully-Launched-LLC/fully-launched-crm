@@ -129,29 +129,5 @@ export const hasRealSite = (p: ScannedPlace) =>
 export const PRIORITY_TIP = "Who to call first: established businesses with 1-2 clear gaps rank highest";
 export const WEBSITE_SCORE_TIP = "Speed, SEO and AI-search readiness";
 
-// Field-service software ("Runs on:" badge). Scanner tech names -> label.
-const FIELD_SOFTWARE: [RegExp, string][] = [
-  [/ServiceTitan/, "ServiceTitan"],
-  [/^Housecall Pro$/, "Housecall Pro"],
-  [/^Jobber$/, "Jobber"],
-  [/^Service Fusion$/, "Service Fusion"],
-  [/^FieldEdge$/, "FieldEdge"],
-  [/^Workiz$/, "Workiz"],
-  [/^Successware$/, "Successware"],
-  [/^BuildOps$/, "BuildOps"],
-  [/^ServiceTrade$/, "ServiceTrade"],
-  [/^Kickserv$/, "Kickserv"],
-  [/^GorillaDesk$/, "GorillaDesk"],
-  [/^Service Autopilot$/, "Service Autopilot"],
-  [/^JobNimbus$/, "JobNimbus"],
-  [/^AccuLynx$/, "AccuLynx"],
-];
-
-export function fieldSoftware(tech: string[] | null | undefined): string[] {
-  const out: string[] = [];
-  (tech ?? []).forEach((t) => {
-    const hit = FIELD_SOFTWARE.find(([re]) => re.test(t));
-    if (hit && !out.includes(hit[1])) out.push(hit[1]);
-  });
-  return out;
-}
+// Software groups moved to lib/lead-finder/software.ts.
+export { fieldSoftware } from "@/lib/lead-finder/software";

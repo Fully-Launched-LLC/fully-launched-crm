@@ -1,4 +1,5 @@
 import type { PageSpeed, Recommendation, ScannedPlace } from "@/lib/lead-finder/types";
+import { plugSoftware } from "@/lib/lead-finder/software";
 
 /**
  * Call script built from what the scan found. Ported from Matteo's
@@ -58,10 +59,10 @@ function ecomHook(L: ScannedPlace): string {
     (missing.length ? " A lot of shops like yours grow fast by adding " + orList(missing.slice(0, 3)) + "." : "");
 }
 
-// Field-service software we build AI tools on top of (AI pitch).
-const PLUG_INTO = ["ServiceTitan", "Housecall Pro", "Jobber"];
+// Software we build AI / back-office tools on top of (field service, then
+// CRM; lib/lead-finder/software.ts). The AI pitch names the first one.
 function plugsInto(L: ScannedPlace): string | null {
-  return PLUG_INTO.find((name) => (L.tech || []).some((t) => t.includes(name))) ?? null;
+  return plugSoftware(L.tech)[0] ?? null;
 }
 // Our AI offer is back-office automation that plugs into their software.
 // Never call answering or an AI receptionist.

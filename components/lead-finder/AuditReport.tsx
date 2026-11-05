@@ -6,7 +6,10 @@ import "@/components/lead-finder/lead-finder.css";
 import { LF_FONT_VARS } from "@/components/lead-finder/fonts";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/lead-finder/apiFetch";
-import type { TeamMember } from "@/lib/types";
+import { createPortal } from "react-dom";
+import type { Lead, TeamMember } from "@/lib/types";
+import { canEditLead } from "@/lib/leads/list";
+import ConvertDialog from "@/components/sales/ConvertDialog";
 import type { ExistingLead, PageSpeed, SavedAudit, ScannedPlace } from "@/lib/lead-finder/types";
 import { buildRecommendations } from "@/lib/lead-finder/recommendations";
 import { buildCallScript, type PitchKey } from "@/lib/lead-finder/callScript";
@@ -21,6 +24,7 @@ import { LatestOutcome } from "@/components/sales/OutcomeChips";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import BookCall from "@/components/sales/BookCall";
 import DraftEmail from "@/components/sales/DraftEmail";
+import RunsOn from "@/components/sales/RunsOn";
 
 // The business dossier (opened from Run audit), in this order:
 //   a. header: business, category, address, rating, Assigned to, latest
@@ -190,8 +194,21 @@ function AuditInner({ placeId, type, me, members, saved, initialExisting, source
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId, fromSaved, L, ranAt, speed]);
 
+  // Move to Interested from the header's Book a call (the side preview
+  // section opens its own). Same dialog and rules as BusinessDetail.
+  const [convert, setConvert] = useState<{ lead: Lead; firstTouch: { channel: string; direction: string } | null } | null>(null);
+  async function openMove(leadId: string) {
+    const supabase = createClient();
+    const [{ data: lead }, { data: first }] = await Promise.all([
+      supabase.from("leads").select("*").eq("id", leadId).single(),
+      supabase.from("lead_touches").select("channel, direction").eq("lead_id", leadId).order("touched_at").limit(1),
+    ]);
+    if (lead) setConvert({ lead: lead as Lead, firstTouch: first?.[0] ?? null });
+  }
+
   // Logging from the header (Book a call) and the email drafts (Mark as
-  // sent); the side preview section logs through BusinessDetail.
+  // sent); the side preview section logs through BusinessDetail. Like the
+  // side preview, Interested / Booked call then open Move to Interested.
   async function quickLog(o: Outcome, extra?: { summary?: string | null; details?: Record<string, string> | null }): Promise<string | null> {
     if (!scanned) return "The audit is still loading.";
     let res;
@@ -202,6 +219,7 @@ function AuditInner({ placeId, type, me, members, saved, initialExisting, source
     }
     if (res.failed.length) return res.failed[0].reason;
     let current = res.saved[0].existing;
+    if (o.opensMove && !current.project_id && canEditLead(current, me)) void openMove(current.id);
     setExisting(current);
     toast.show({
       text: `${o.label} saved for ${scanned.name}.`,
@@ -262,6 +280,12 @@ function AuditInner({ placeId, type, me, members, saved, initialExisting, source
                     {L.rating !== "N/A" ? `★ ${L.rating} from ${L.reviews} Google reviews` : "No Google rating yet"} · Assigned to:{" "}
                     {existing?.owner ? memberName(existing.owner) : "nobody yet"}
                   </div>
+                  {(L.tech.length > 0 || (L.marketplaces ?? []).length > 0) && (
+                    <div style={{ marginTop: 6 }}>
+                      <RunsOn tech={L.tech} />
+                      {(L.marketplaces ?? []).length > 0 && <span className="badge-mkt">Sells on: {(L.marketplaces ?? []).join(", ")}</span>}
+                    </div>
+                  )}
                   <div style={{ marginTop: 6 }}>
                     {existing?.last_touch || existing?.project_id ? (
                       <LatestOutcome existing={existing} memberName={memberName} />
@@ -309,6 +333,23 @@ function AuditInner({ placeId, type, me, members, saved, initialExisting, source
 
             {/* f: call script, screen only */}
             <CallScriptBox L={L} speed={S} recommendations={recommendations} />
+
+            {convert &&
+              createPortal(
+                <ConvertDialog
+                  lead={convert.lead}
+                  firstTouch={convert.firstTouch}
+                  members={members}
+                  me={me}
+                  callBooked
+                  onClose={() => setConvert(null)}
+                  onConverted={(projectId) => {
+                    setConvert(null);
+                    setExisting((ex) => (ex ? { ...ex, project_id: projectId, status: "converted" } : ex));
+                  }}
+                />,
+                document.body
+              )}
           </>
         )}
       </div>

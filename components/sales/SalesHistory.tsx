@@ -14,6 +14,7 @@ import Dropdown from "@/components/lead-finder/Dropdown";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import { LatestOutcome } from "@/components/sales/OutcomeChips";
 import UnmatchedMeetings from "@/components/sales/UnmatchedMeetings";
+import { runsOnText } from "@/lib/lead-finder/software";
 
 // "Follow-ups due": next_action_at today or earlier (viewer's day), sorted by
 // due date. The Sales nav badge links here with ?due=1 (person: Mine).
@@ -200,14 +201,14 @@ export default function SalesHistory({
 
   function exportCSV() {
     if (!visible.length) return;
-    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Next Action", "Next Action Date", "Phone", "Email", "Business Owner LinkedIn", "Company LinkedIn", "Instagram", "Facebook", "TikTok", "YouTube", "Website", "Address", "Google Maps Link"];
+    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Runs On", "Next Action", "Next Action Date", "Phone", "Email", "Business Owner LinkedIn", "Company LinkedIn", "Instagram", "Facebook", "TikTok", "YouTube", "Website", "Address", "Google Maps Link"];
     const out = visible.map((r) => {
       const l = r.lead;
       const t = r.latest;
       const label = l.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
       const place = placeFromLead(l);
       return [l.company ?? l.name, ownerNameOf(place, { ...resultFromLead(l, t).existing! }) ?? "", l.title && l.title !== "Possible owner" ? l.title : "", l.owner ? memberName(l.owner) : "", label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
-        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.email ?? "",
+        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", runsOnText(place.tech), l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.email ?? "",
         l.contact_linkedin ?? "", l.company_linkedin ?? place.socialLinks?.LinkedIn ?? "",
         place.socialLinks?.Instagram ?? "", place.socialLinks?.Facebook ?? "", place.socialLinks?.TikTok ?? "", place.socialLinks?.YouTube ?? "",
         l.website ?? "", l.address ?? "", l.maps_url ?? ""];

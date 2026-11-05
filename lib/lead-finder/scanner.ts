@@ -1,6 +1,6 @@
 import "server-only";
 import type { GooglePlace } from "@/lib/lead-finder/google";
-import type { GbpInfo, ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks, SocialLinks, SocialPlatform } from "@/lib/lead-finder/types";
+import type { ContactItem, ContactSource, GbpInfo, ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks, SocialLinks, SocialPlatform } from "@/lib/lead-finder/types";
 import { extractCid } from "@/lib/lead-finder/cid";
 import { priorityScore } from "@/lib/lead-finder/priority";
 import { findOwnerName } from "@/lib/lead-finder/ownerName";
@@ -172,18 +172,50 @@ const TECH_PATTERNS: [string, RegExp][] = [
   ["JobNimbus", /jobnimbus\.com/i],
   ["AccuLynx", /acculynx\.com/i],
   ["QuickBooks", /quickbooks\.intuit\.com|connect\.intuit\.com|intuit\.me/i],
-  ["Square", /squareup\.com|square\.site|squarecdn\.com/i],
-  ["Mindbody", /mindbodyonline\.com|mindbody\.io/i],
-  ["Vagaro", /vagaro\.com/i],
-  ["Booksy", /booksy\.com/i],
-  ["Calendly", /calendly\.com/i],
-  ["Acuity", /acuityscheduling\.com/i],
-  ["Clio", /clio\.com|app\.clio/i],
-  ["Podium", /podium\.com/i],
-  ["Birdeye", /birdeye\.com/i],
+  // Grouped for the "Runs on:" badges in lib/lead-finder/software.ts.
+  // CRM / marketing
   ["HubSpot", /js\.hs-scripts\.com|hsforms\.net|hubspot\.com/i],
+  ["Salesforce", /webto\.salesforce\.com|servlet\.WebToLead|force\.com\/servlet/i],
+  ["Zoho", /zohopublic\.com|zoho\.com\/crm|crm\.zoho\.|salesiq\.zoho\.|zcrm/i],
+  ["Keap", /infusionsoft\.(?:com|app)|keap\.(?:com|app)|keap-forms/i],
+  ["GoHighLevel", /leadconnectorhq\.com|msgsndr\.com|gohighlevel\.com/i],
+  ["ActiveCampaign", /activehosted\.com|activecampaign\.com|trackcmp\.net/i],
+  ["Pipedrive", /pipedrive\.com|pipedriveassets\.com/i],
   ["Mailchimp", /mailchimp\.com|list-manage\.com|chimpstatic\.com/i],
   ["Klaviyo", /klaviyo\.com/i],
+  ["Constant Contact", /constantcontact\.com|ctctcdn\.com/i],
+  // Reviews / messaging
+  ["Podium", /podium\.com/i],
+  ["Birdeye", /birdeye\.com/i],
+  ["NiceJob", /nicejob\.(?:co|com)\b/i],
+  ["Broadly", /broadly\.com/i],
+  ["Weave", /getweave\.com|weavehelp\.com/i],
+  ["Signpost", /signpost\.com/i],
+  // Chat
+  ["Intercom", /widget\.intercom\.io|intercomcdn\.com|js\.intercomcdn/i],
+  ["Drift", /js\.driftt\.com|drift\.com\/(?:include|core)/i],
+  ["Tidio", /code\.tidio\.co|tidiochat/i],
+  ["LiveChat", /cdn\.livechatinc\.com|livechatinc\.com/i],
+  ["tawk.to", /embed\.tawk\.to/i],
+  ["Facebook chat", /fb-customerchat|customerchat\.js|xfbml\.customerchat/i],
+  // Industry
+  ["Clio", /clio\.com|app\.clio/i],
+  ["Mindbody", /mindbodyonline\.com|mindbody\.io/i],
+  ["Vagaro", /vagaro\.com/i],
+  ["Boulevard", /joinblvd\.com|blvd\.co\b/i],
+  ["Booksy", /booksy\.com/i],
+  ["NexHealth", /nexhealth\.com/i],
+  ["Zocdoc", /zocdoc\.com/i],
+  ["Lighthouse 360", /lh360\.com|lighthouse360/i],
+  ["RevenueWell", /revenuewell\.com/i],
+  ["Toast", /toasttab\.com/i],
+  ["ChowNow", /chownow\.com/i],
+  ["Square Online", /square\.site\b/i],
+  // Payments / booking
+  ["Square", /squareup\.com|squarecdn\.com/i],
+  ["Stripe", /js\.stripe\.com|checkout\.stripe\.com|buy\.stripe\.com/i],
+  ["Calendly", /calendly\.com/i],
+  ["Acuity", /acuityscheduling\.com/i],
   ["Shopify", /cdn\.shopify\.com|myshopify\.com/i],
   ["WordPress", /wp-content\/|wp-includes\//i],
   ["Wix", /wixstatic\.com|wix\.com\/|_wixCIDX|wix-code/i],
@@ -193,7 +225,13 @@ const TECH_PATTERNS: [string, RegExp][] = [
 ];
 // Tools we can plug AI into via their API (ServiceTitan = our Comfort x Design case study).
 const isServiceTitan = (t: string) => /ServiceTitan/.test(t);
-const AI_INTEGRATABLE = ["ScheduleEngine (ServiceTitan)", "FieldRoutes (ServiceTitan)", "ServiceTitan", "Housecall Pro", "Jobber", "QuickBooks", "Clio", "Mindbody", "Square", "HubSpot"];
+// Field-service and CRM tools (software.ts groups) feed the AI / back-office pitch.
+const AI_INTEGRATABLE = [
+  "ScheduleEngine (ServiceTitan)", "FieldRoutes (ServiceTitan)", "ServiceTitan", "Housecall Pro", "Jobber", "Service Fusion",
+  "FieldEdge", "Workiz", "Successware", "BuildOps", "ServiceTrade", "Kickserv", "GorillaDesk", "Service Autopilot", "JobNimbus",
+  "AccuLynx", "QuickBooks", "Clio", "Mindbody", "Square", "HubSpot", "Salesforce", "Zoho", "Keap", "GoHighLevel",
+  "ActiveCampaign", "Pipedrive",
+];
 
 // Ad tracking code: if it's on their site, they're (very likely) paying for ads.
 const AD_PATTERNS: [string, RegExp][] = [
@@ -488,6 +526,57 @@ export function findEmails(html: string): string[] {
 // About-style pages, where owners introduce themselves. First match only.
 const ABOUT_LINK_RE = /(?:^|[^a-z])(?:about(?:[-_\s]?us)?|our[-_\s]?story|our[-_\s]?team|meet[-_\s]?the[-_\s]?team|team|who[-_\s]?we[-_\s]?are|our[-_\s]?company)(?:[^a-z]|$)/i;
 
+// US phone numbers from tel: links, and (on the business's own pages) from
+// visible text written with separators. Normalized to (630) 961-2220.
+function normPhone(raw: string): string | null {
+  let d = raw.replace(/\D/g, "");
+  if (d.length === 11 && d.startsWith("1")) d = d.slice(1);
+  if (d.length !== 10 || /^[01]/.test(d)) return null;
+  return `(${d.slice(0, 3)}) ${d.slice(3, 6)}-${d.slice(6)}`;
+}
+export function findPhones(html: string, textToo: boolean): string[] {
+  const out = new Set<string>();
+  for (const m of Array.from(html.matchAll(/href=["']tel:([^"']+)["']/gi))) {
+    const p = normPhone(decodeURIComponent(m[1]));
+    if (p) out.add(p);
+  }
+  if (textToo) {
+    const text = htmlToText(html);
+    for (const m of Array.from(text.matchAll(/(?:\+?1[\s.-]?)?\(?\b\d{3}\)?[\s.-]\d{3}[\s.-]\d{4}\b/g))) {
+      const p = normPhone(m[0]);
+      if (p) out.add(p);
+    }
+  }
+  return Array.from(out);
+}
+
+// Collects emails and phones with where they came from, first source wins.
+class ContactFinder {
+  emails: ContactItem[] = [];
+  phones: ContactItem[] = [];
+  addEmails(list: string[], source: ContactSource) {
+    list.forEach((e) => {
+      if (!this.emails.some((x) => x.value === e)) this.emails.push({ value: e, source });
+    });
+  }
+  addPhones(list: string[], source: ContactSource) {
+    list.forEach((p) => {
+      if (!this.phones.some((x) => x.value === p)) this.phones.push({ value: p, source });
+    });
+  }
+  addPage(html: string, source: ContactSource) {
+    // Facebook's own markup is full of meta addresses; only real contact ones count.
+    const emails = findEmails(html).filter((e) => source !== "Facebook page" || !/@(?:facebook|fb|facebookmail|meta|fbcdn)\./i.test(e));
+    this.addEmails(emails, source);
+    this.addPhones(findPhones(html, source !== "Facebook page"), source);
+  }
+  // Own-domain emails first (info@theirbusiness.com before gmail).
+  result(domain: string | null) {
+    const own = (e: ContactItem) => (domain && e.value.endsWith("@" + domain) ? 0 : 1);
+    return { emails: [...this.emails].sort((a, b) => own(a) - own(b)).slice(0, 10), phones: this.phones.slice(0, 10) };
+  }
+}
+
 const LINK_RE = /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,80}?)<\/a>/gi;
 
 /** Find a same-site link whose address or label matches a pattern. */
@@ -568,6 +657,9 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
   let siteStatus: string;
   let emails: string[] = [];
   let ownerName: string | null = null;
+  const contactsFound = new ContactFinder();
+  let siteDomain: string | null = null;
+  if (place.nationalPhoneNumber) contactsFound.addPhones([normPhone(place.nationalPhoneNumber) ?? place.nationalPhoneNumber], "Google profile");
   let contactPage: string | null = null;
   let shopify: ShopifyInfo | null = null;
 
@@ -602,23 +694,25 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
         tags.website.push("Looks outdated (© " + info.copyrightYear + ")");
       }
 
-      // ---- CONTACTS: homepage, one About page (owner name), one Contact page ----
+      // ---- CONTACTS: homepage, the About page, the Contact page, and their
+      // Facebook page: emails and phones with where each was found
+      // (contacts), the owner's name (About page first). ----
       const finalUrl = page.finalUrl || website;
-      emails = findEmails(page.html);
+      contactsFound.addPage(page.html, "homepage");
       ownerName = findOwnerName(page.html);
       contactPage = findContactPage(page.html, finalUrl);
-      const aboutPage = ownerName ? null : findLinkTo(page.html, finalUrl, ABOUT_LINK_RE);
-      if (aboutPage) {
+      const aboutPage = findLinkTo(page.html, finalUrl, ABOUT_LINK_RE);
+      if (aboutPage && aboutPage !== contactPage) {
         const ap = await fetchHomepageOnce(aboutPage, PAGE_TIMEOUT_MS, ctx);
         if (ap.ok && ap.html) {
-          ownerName = findOwnerName(ap.html);
-          emails = Array.from(new Set([...emails, ...findEmails(ap.html)]));
+          ownerName = ownerName || findOwnerName(ap.html);
+          contactsFound.addPage(ap.html, "about page");
         }
       }
-      if (contactPage && contactPage !== aboutPage && (emails.length === 0 || !ownerName)) {
+      if (contactPage) {
         const cp = await fetchHomepageOnce(contactPage, PAGE_TIMEOUT_MS, ctx);
         if (cp.ok && cp.html) {
-          emails = Array.from(new Set([...emails, ...findEmails(cp.html)]));
+          contactsFound.addPage(cp.html, "contact page");
           ownerName = ownerName || findOwnerName(cp.html);
           const extra = analyzeHtml(cp.html, cp.finalUrl);
           extra.socials.forEach((s) => {
@@ -633,6 +727,11 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
           });
           info.hasBooking = info.hasBooking || extra.hasBooking;
         }
+      }
+      // Their Facebook page (logged out it often shows little; tel: links only).
+      if (info.socialLinks.Facebook) {
+        const fb = await fetchHomepageOnce(info.socialLinks.Facebook, 6000, ctx);
+        if (fb.ok && fb.html) contactsFound.addPage(fb.html, "Facebook page");
       }
       // ServiceTitan's booking widget often lives on a separate "Schedule"/"Book" page.
       if (!info.tech.some(isServiceTitan)) {
@@ -650,9 +749,8 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
       }
 
       // Prefer emails on their own domain (info@theirbusiness.com) over gmail etc.
-      const domain = hostOf(finalUrl);
-      emails.sort((a, b) => (b.endsWith("@" + domain) ? 1 : 0) - (a.endsWith("@" + domain) ? 1 : 0));
-      emails = emails.slice(0, 3);
+      siteDomain = hostOf(finalUrl);
+      emails = contactsFound.result(siteDomain).emails.map((e) => e.value).slice(0, 3);
 
       if (info.ads.length && tags.website.length) {
         tags.website.unshift("Pays for ads (" + info.ads.join(", ") + ") but site has problems");
@@ -799,5 +897,6 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     photos: (place.photos || []).length,
     socialLinks: siteInfo ? siteInfo.socialLinks : {},
     gbp: gbpInfo(place),
+    contacts: contactsFound.result(siteDomain),
   };
 }

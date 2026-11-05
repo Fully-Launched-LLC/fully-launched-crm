@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
 import type { ExistingLead, LeadFinderRun, RunResult, ScannedPlace, SearchParams, ServiceKey, SweepParams, WebScoreCache } from "@/lib/lead-finder/types";
-import { PRIORITY_TIP, WEBSITE_SCORE_TIP, fieldSoftware, websiteScore } from "@/lib/lead-finder/websiteScore";
+import { PRIORITY_TIP, WEBSITE_SCORE_TIP, websiteScore } from "@/lib/lead-finder/websiteScore";
 import { ownerNameOf } from "@/lib/sales/owner";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import { SERVICE_LABELS, SERVICE_ORDER } from "@/lib/lead-finder/sweep";
@@ -15,6 +15,8 @@ import { ROCKET_IDLE_SRC } from "@/components/lead-finder/assets";
 import LocalDateTime from "@/components/LocalDateTime";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import { SaveSearchButton } from "@/components/sales/SavedSearches";
+import RunsOn from "@/components/sales/RunsOn";
+import { runsOnText } from "@/lib/lead-finder/software";
 import { LatestOutcome, OutcomeChips, contactState, stopNotice, type ContactState } from "@/components/sales/OutcomeChips";
 
 // Matteo's mission control (Sales > Find results): stats, tabs, service
@@ -210,7 +212,7 @@ export default function MissionControl({
         r.existing?.contact_linkedin ?? "", r.existing?.company_linkedin ?? l.socialLinks?.LinkedIn ?? "",
         l.contactPage || "", (l.socials || []).join("; "),
         l.socialLinks?.Instagram ?? "", l.socialLinks?.Facebook ?? "", l.socialLinks?.TikTok ?? "", l.socialLinks?.YouTube ?? "", l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
-        fieldSoftware(l.tech).join("; ") || (l.usesServiceTitan ? "ServiceTitan" : ""), (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
+        runsOnText(l.tech), (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
         l.tags.website.join("; "), l.tags.social.join("; "), l.tags.ecom.join("; "), l.tags.ai.join("; "),
         outcome, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "", l.mapsUrl];
     });
@@ -444,9 +446,7 @@ export default function MissionControl({
                           <button type="button" className="name" onClick={(e) => { e.stopPropagation(); open(r.google_place_id); }}>
                             {l.name}
                           </button>
-                          {fieldSoftware(l.tech).map((s) => (
-                            <span key={s} className="badge-st">Runs on: {s}</span>
-                          ))}
+                          <RunsOn tech={l.tech} />
                           {(l.marketplaces ?? []).length > 0 && (
                             <span className="badge-mkt">Sells on: {(l.marketplaces ?? []).join(", ")}</span>
                           )}

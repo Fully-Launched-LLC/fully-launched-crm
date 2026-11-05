@@ -401,3 +401,7 @@
 .lf-root.dossier .dossier-body{display:flex;flex-direction:column;gap:16px;}
 .lf-root .draft.inline{width:100%;padding:0;}
 .lf-root.toast-host{background:transparent;position:static;}
+.lf-root .found-row{font-size:13.5px;}
+.lf-root .primary-tag{font:600 10.5px var(--lf-mono),monospace;letter-spacing:.8px;text-transform:uppercase;color:var(--gold-ink);background:var(--gold);padding:1px 6px;border-radius:4px;}
+.lf-root .badge-st.runs-on{margin-left:0;margin-right:6px;}
+.lf-root td .badge-st.runs-on{margin-left:6px;}

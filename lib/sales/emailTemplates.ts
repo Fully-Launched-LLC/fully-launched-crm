@@ -1,6 +1,6 @@
 import type { ScannedPlace, ServiceKey } from "@/lib/lead-finder/types";
 import { SERVICE_ORDER } from "@/lib/lead-finder/sweep";
-import { fieldSoftware } from "@/lib/lead-finder/websiteScore";
+import { plugSoftware } from "@/lib/lead-finder/software";
 
 // Draft email (Sales side preview). One template per branch, filled from
 // the scan: business owner, the gatekeeper we spoke with (latest Not
@@ -61,7 +61,7 @@ export function buildEmail(kind: EmailKind, ctx: EmailContext): { subject: strin
   const lines: string[] = [hi, ""];
   if (ctx.gatekeeper) lines.push(`I called earlier and spoke with ${first(ctx.gatekeeper)}, so I wanted to follow up by email.`, "");
   const rated = typeof p.rating === "number" && p.reviews > 0;
-  const software = fieldSoftware(p.tech);
+  const software = plugSoftware(p.tech);
   const found = gaps(p, kind);
   const gapBlock = found.length ? ["A couple of things I noticed while looking you up:", ...found.map((g) => "- " + g), ""] : [];
   const ask = ctx.bookingLink

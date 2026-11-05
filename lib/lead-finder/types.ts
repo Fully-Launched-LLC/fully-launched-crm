@@ -60,7 +60,14 @@ export type ScannedPlace = {
   // parameters removed. LinkedIn = company page only. Missing before Nov 5.
   socialLinks?: SocialLinks;
   gbp?: GbpInfo;
+  // Every email and phone found, with where (Nov 6+): homepage, contact
+  // page, about page, Facebook page, Google profile. Own-domain emails first.
+  // Found on the page only; never guessed or built.
+  contacts?: { emails: ContactItem[]; phones: ContactItem[] };
 };
+
+export type ContactSource = "homepage" | "contact page" | "about page" | "Facebook page" | "Google profile";
+export type ContactItem = { value: string; source: ContactSource };
 
 export const SOCIAL_PLATFORMS = ["Instagram", "Facebook", "TikTok", "YouTube", "LinkedIn"] as const;
 export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];

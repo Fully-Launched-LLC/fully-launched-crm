@@ -11,7 +11,6 @@ import { apiFetch } from "@/lib/lead-finder/apiFetch";
 import {
   PRIORITY_TIP,
   WEBSITE_SCORE_TIP,
-  fieldSoftware,
   freshWebScore,
   hasRealSite,
   websiteScore,
@@ -35,6 +34,8 @@ import DraftEmail from "@/components/sales/DraftEmail";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import ConvertDialog from "@/components/sales/ConvertDialog";
 import BookCall from "@/components/sales/BookCall";
+import RunsOn from "@/components/sales/RunsOn";
+import { runsOn } from "@/lib/lead-finder/software";
 
 // The side preview for one business, used by Find (search results) and
 // History: actions (call, maps, site, Preview site, audit), outcome buttons
@@ -102,7 +103,7 @@ export default function BusinessDetail({
     "/lead-finder/audit?" +
     new URLSearchParams({ place: l.id, type: r.search_type || l.category || "", ...(ex ? { lead: ex.id } : {}) }).toString();
   const canEdit = !!ex && canEditLead(ex, me);
-  const software = fieldSoftware(l.tech);
+  const software = runsOn(l.tech);
   const ws = websiteScore(l);
 
   // ---- Full website score (background PageSpeed) ----
@@ -174,6 +175,27 @@ export default function BusinessDetail({
       live = false;
     };
   }, [ex?.id, ex?.last_touch?.touched_at, ex?.last_touch?.summary, reload, supabase]);
+
+  // ---- Emails and phones found (scan), plus whatever the record holds ----
+  const foundEmails: { value: string; source: string }[] = [
+    ...(ex?.email && !(l.contacts?.emails ?? []).some((e) => e.value.toLowerCase() === ex.email!.toLowerCase())
+      ? [{ value: ex.email, source: "saved" }]
+      : []),
+    ...(l.contacts?.emails ?? l.emails.map((v) => ({ value: v, source: "website" }))),
+  ];
+  const samePhone = (a: string | null, b: string | null) => !!a && !!b && a.replace(/\D/g, "").slice(-10) === b.replace(/\D/g, "").slice(-10);
+  const scanPhones = l.contacts?.phones ?? (l.phone && l.phone !== "No phone listed" ? [{ value: l.phone, source: "Google profile" }] : []);
+  const foundPhones: { value: string; source: string }[] = [
+    ...(ex?.phone && !scanPhones.some((p) => samePhone(p.value, ex.phone)) ? [{ value: ex.phone, source: "saved" }] : []),
+    ...scanPhones,
+  ];
+  async function makePrimary(fields: { email?: string; phone?: string }) {
+    if (!me) return;
+    setContactMsg(null);
+    const res = await saveBusinessContact(supabase, me.id, { key: l.id, place: l, searchType: r.search_type, existing: ex }, fields, sourceDetail);
+    if (res.existing) onSaved(res.existing);
+    if (res.error) setContactMsg(res.error);
+  }
 
   // ---- Contact (the person at the business): any team member ----
   const [contactEdit, setContactEdit] = useState<{
@@ -364,9 +386,7 @@ export default function BusinessDetail({
           <div className="meta">{[l.category, l.address].filter(Boolean).join(" · ")}</div>
           {(software.length > 0 || (l.marketplaces ?? []).length > 0) && (
             <div style={{ marginTop: 6 }}>
-              {software.map((s) => (
-                <span key={s} className="badge-st">Runs on: {s}</span>
-              ))}
+              <RunsOn tech={l.tech} />
               {l.marketplaces?.length ? <span className="hint" style={{ marginLeft: software.length ? 6 : 0 }}>Sells on </span> : null}
               {(l.marketplaces ?? []).map((m) => (
                 <span key={m} className="badge-mkt">{m}</span>
@@ -490,12 +510,28 @@ export default function BusinessDetail({
             </div>
           )}
           {contactMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{contactMsg}</span>}
-          {tel && <a href={`tel:${tel}`}>{phone}</a>}
-          {email ? (
-            [email, ...l.emails.filter((m) => m !== email)].map((m) => (
-              <a key={m} href={`mailto:${m}`}>{m}</a>
-            ))
-          ) : l.contactPage ? (
+          {/* Every email and phone found, with where; pick the primary (saved to the business contact). */}
+          {foundPhones.map((p) => (
+            <div key={p.value} className="found-row">
+              <a href={`tel:${p.value.replace(/[^0-9+]/g, "")}`}>{p.value}</a> <span className="hint">{p.source}</span>{" "}
+              {samePhone(p.value, phone) ? (
+                <span className="primary-tag">primary</span>
+              ) : (
+                <button type="button" className="linkbtn" disabled={!me} onClick={() => void makePrimary({ phone: p.value })}>Make primary</button>
+              )}
+            </div>
+          ))}
+          {foundEmails.map((e) => (
+            <div key={e.value} className="found-row">
+              <a href={`mailto:${e.value}`}>{e.value}</a> <span className="hint">{e.source}</span>{" "}
+              {e.value.toLowerCase() === (email ?? "").toLowerCase() ? (
+                <span className="primary-tag">primary</span>
+              ) : (
+                <button type="button" className="linkbtn" disabled={!me} onClick={() => void makePrimary({ email: e.value })}>Make primary</button>
+              )}
+            </div>
+          ))}
+          {foundEmails.length ? null : l.contactPage ? (
             <a href={l.contactPage} target="_blank" rel="noopener noreferrer">Contact page</a>
           ) : l.website ? (
             <a href={l.website} target="_blank" rel="noopener noreferrer">Website</a>
