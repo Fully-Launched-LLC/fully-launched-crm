@@ -415,3 +415,4 @@
 .lf-root .fo-row{display:flex;flex-direction:column;gap:4px;padding-top:8px;border-top:1px solid var(--line2);font-size:13px;}
 .lf-root .fo-row:first-of-type{border-top:0;padding-top:0;}
 .lf-root .fo-links{display:flex;flex-wrap:wrap;gap:4px 12px;}
+.lf-root .granola{display:flex;flex-direction:column;align-items:flex-start;gap:4px;margin-top:4px;}

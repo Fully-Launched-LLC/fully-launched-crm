@@ -454,6 +454,31 @@ export default function BusinessDetail({
           <ul className="timeline">
             {touches.map((t) => {
               const m = t.meeting_note_id ? meetings[t.meeting_note_id] : null;
+              // A call the Granola meeting attached to (migration 027): the
+              // call sentence, then expandable "Granola notes".
+              if (m && t.channel !== "meeting") {
+                const open = openMeeting === m.id;
+                const fromNotes = !!t.summary && !!m.summary_md && m.summary_md.trim().startsWith(t.summary.trim().slice(0, 40));
+                return (
+                  <li key={t.id}>
+                    <TouchLine t={t} memberName={memberName} />
+                    {t.summary && !fromNotes && <div className="latest-note">“{t.summary}”</div>}
+                    <div className="granola">
+                      <button type="button" className="linkbtn" onClick={() => setOpenMeeting(open ? null : m.id)}>
+                        {open ? "Hide Granola notes" : "Granola notes"}
+                      </button>
+                      {open && (
+                        <>
+                          {m.summary_md && <div className="m-summary open">{m.summary_md}</div>}
+                          {m.source_url && (
+                            <a href={m.source_url} target="_blank" rel="noopener noreferrer">Open in Granola</a>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  </li>
+                );
+              }
               if (m) {
                 const open = openMeeting === m.id;
                 return (
