@@ -246,18 +246,26 @@ export default function BusinessDetail({
   }
 
   // ---- Outcomes: saved on the first click ----
-  // Not available opens a small form first (who we spoke with); the rest
-  // save right away. The toast offers Add note, Undo, and for No answer /
-  // Not available / Emailed a follow-up date.
+  // Not available opens a small form first (who we spoke with); Emailed opens
+  // the Draft email modal (its Mark as sent logs it); the rest save right
+  // away. The toast offers Add note, Undo, and a follow-up date where the
+  // outcome has one. LinkedIn outcomes then ask for the business owner's
+  // LinkedIn profile if it's empty.
   const [naForm, setNaForm] = useState<{ spoke_with: string; role: string; said: string; email: string } | null>(null);
   const [naMsg, setNaMsg] = useState<string | null>(null);
   const [draftOpen, setDraftOpen] = useState(false);
+  const [liPrompt, setLiPrompt] = useState<string | null>(null); // the pasted link, while asking
+  const [liMsg, setLiMsg] = useState<string | null>(null);
 
   // OutcomeChips: returns an error message or null.
   async function save(o: Outcome): Promise<string | null> {
     if (o.needsForm) {
       setNaMsg(null);
       setNaForm({ spoke_with: "", role: "", said: "", email: "" });
+      return null;
+    }
+    if (o.opensDraft) {
+      setDraftOpen(true);
       return null;
     }
     return (await doSave(o)).error;
@@ -300,6 +308,10 @@ export default function BusinessDetail({
           }
         : undefined,
     });
+    if (o.asksLinkedin && !saved.existing.contact_linkedin) {
+      setLiMsg(null);
+      setLiPrompt("");
+    }
     // Interested / Booked call: Move to Interested right away (when allowed).
     if (o.opensMove && !saved.existing.project_id && canEditLead(saved.existing, me))
       void openConvert(saved.existing.id, o.key === "booked_call");
@@ -322,6 +334,15 @@ export default function BusinessDetail({
       if (c.existing) onSaved(c.existing);
       if (c.error) setContactMsg("Call saved, but the email wasn't: " + c.error);
     }
+  }
+
+  async function saveLinkedinPrompt() {
+    if (!me || liPrompt == null || !liPrompt.trim()) return;
+    if (!/linkedin\.com\//i.test(liPrompt)) return setLiMsg("That doesn't look like a LinkedIn link.");
+    const c = await saveBusinessContact(supabase, me.id, { key: l.id, place: l, searchType: r.search_type, existing: ex }, { contact_linkedin: liPrompt }, sourceDetail);
+    if (c.existing) onSaved(c.existing);
+    if (c.error) return setLiMsg(c.error);
+    setLiPrompt(null);
   }
 
   // Last gatekeeper we spoke with (Not available), for the email draft.
@@ -386,6 +407,25 @@ export default function BusinessDetail({
       <div>
         <div className="sec-title">Log an outcome</div>
         <OutcomeChips big disabled={!me} onSave={save} />
+        {liPrompt != null && (
+          <div className="li-prompt">
+            <span className="hint">
+              Paste {ownerName ? `${ownerName.split(" ")[0]}'s` : "the business owner's"} LinkedIn profile link so the team has it.
+            </span>
+            <input className="field" autoFocus type="url" aria-label="Business owner's LinkedIn profile" placeholder="https://www.linkedin.com/in/…"
+              value={liPrompt} onChange={(e) => setLiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveLinkedinPrompt();
+                if (e.key === "Escape") setLiPrompt(null);
+              }} />
+            {liMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{liMsg}</span>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <button type="button" className="btn btn-gold" onClick={() => void saveLinkedinPrompt()}>Save</button>
+              <a className="btn" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">Find on LinkedIn</a>
+              <button type="button" className="btn" onClick={() => setLiPrompt(null)}>Not now</button>
+            </div>
+          </div>
+        )}
         {naForm && (
           <div className="na-form">
             <span className="hint"><b style={{ color: "var(--bright)" }}>Not available.</b> Reached someone, not the decision maker.</span>

@@ -10,7 +10,7 @@ import { noteOutcome, undoOutcome, zeroRowsReason, type SavedOutcome } from "@/l
 // and Undo (10 seconds; deletes the touches and puts the records back).
 // After No answer, Not available or Emailed it also offers a follow-up
 // (Tomorrow / In 3 days / Next week / Pick date): sets next_action
-// "Follow up: call" / "Follow up: email" and next_action_at (9:00 local on
+// "Follow up: call" / "email" / "LinkedIn" and next_action_at (9:00 local on
 // that day). That's a leads update, so the 017 RLS rule applies (assigned
 // member, unassigned, or Admin/Manager).
 // One toast at a time; a new save replaces it.
@@ -36,7 +36,7 @@ export type OutcomeToastInput = {
   // Called after the note is saved on the touches.
   onNote: (note: string) => void;
   // Offer a follow-up; onSet gets the records it was set on.
-  followUp?: { kind: "call" | "email"; onSet: (leadIds: string[], nextAction: string, at: string) => void };
+  followUp?: { kind: "call" | "email" | "linkedin"; onSet: (leadIds: string[], nextAction: string, at: string) => void };
 };
 
 // flash: a plain message for 2 seconds (e.g. "Copied").
@@ -92,7 +92,8 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
     const at = followUpAt(when);
     if (Number.isNaN(at.getTime())) return;
     const ids = Array.from(new Set(toast.saved.map((s) => s.existing.id)));
-    const nextAction = toast.followUp.kind === "email" ? "Follow up: email" : "Follow up: call";
+    const nextAction =
+      toast.followUp.kind === "email" ? "Follow up: email" : toast.followUp.kind === "linkedin" ? "Follow up: LinkedIn" : "Follow up: call";
     setBusy(true);
     const { data, error } = await supabase
       .from("leads")
@@ -166,7 +167,7 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
           </div>
           {offerFollow && (
             <div className="oc-follow">
-              <span className="hint">Follow up ({toast.followUp!.kind}):</span>
+              <span className="hint">Follow up ({toast.followUp!.kind === "linkedin" ? "LinkedIn" : toast.followUp!.kind}):</span>
               <button type="button" className="btn" disabled={busy} onClick={() => void setFollowUp(1)}>Tomorrow</button>
               <button type="button" className="btn" disabled={busy} onClick={() => void setFollowUp(3)}>In 3 days</button>
               <button type="button" className="btn" disabled={busy} onClick={() => void setFollowUp(7)}>Next week</button>

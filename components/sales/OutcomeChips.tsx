@@ -5,6 +5,7 @@ import type { ExistingLead } from "@/lib/lead-finder/types";
 import {
   HIDDEN_OUTCOMES,
   OUTCOMES,
+  OUTCOME_GROUPS,
   OUTCOME_CLASS,
   classifyTouch,
   describeTouch,
@@ -14,7 +15,8 @@ import {
   type OutcomeKey,
 } from "@/lib/sales/outcomes";
 
-// One-click outcomes (detail panel, bulk bar). The first click saves;
+// One-click outcomes in three groups (Call result, Email, LinkedIn), in the
+// side preview and the bulk bar. The first click saves;
 // the caller shows the confirmation toast (Add note, Undo). onSave returns
 // an error message, or null when it worked.
 export function OutcomeChips({
@@ -43,21 +45,26 @@ export function OutcomeChips({
 
   return (
     <div onClick={(e) => e.stopPropagation()}>
-      <div className={`oc-chips${big ? " big" : ""}`} role="group" aria-label="Log an outcome">
-        {OUTCOMES.filter((o) => !(bulk && o.needsForm)).map((o) => (
-          <button
-            key={o.key}
-            type="button"
-            className={`oc${HIDDEN_OUTCOMES.includes(o.key) ? " neg" : ""}`}
-            aria-pressed={saving === o.key}
-            title={o.label}
-            disabled={disabled || !!saving}
-            onClick={() => void save(o)}
-          >
-            {saving === o.key ? "Saving…" : o.label}
-          </button>
-        ))}
-      </div>
+      {OUTCOME_GROUPS.map(([group, heading]) => (
+        <div key={group} className="oc-group">
+          <span className="oc-heading">{heading}</span>
+          <div className={`oc-chips${big ? " big" : ""}`} role="group" aria-label={heading}>
+            {OUTCOMES.filter((o) => o.group === group && !(bulk && o.needsForm)).map((o) => (
+              <button
+                key={o.key}
+                type="button"
+                className={`oc${HIDDEN_OUTCOMES.includes(o.key) ? " neg" : ""}`}
+                aria-pressed={saving === o.key}
+                title={o.label}
+                disabled={disabled || !!saving}
+                onClick={() => void save(o)}
+              >
+                {saving === o.key ? "Saving…" : o.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      ))}
       {error && <p className="bad-text" role="alert" style={{ marginTop: 6, fontSize: 12.5 }}>{error}</p>}
     </div>
   );

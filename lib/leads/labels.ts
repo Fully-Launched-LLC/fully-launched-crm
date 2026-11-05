@@ -96,6 +96,7 @@ export const TOUCH_OUTCOMES = [
   "meeting_booked",
   "meeting_held",
   "not_available",
+  "connected",
 ] as const;
 export const TOUCH_OUTCOME_LABELS: Record<string, string> = {
   sent: "Sent",
@@ -109,5 +110,6 @@ export const TOUCH_OUTCOME_LABELS: Record<string, string> = {
   meeting_booked: "Meeting booked",
   meeting_held: "Meeting held",
   not_available: "Not available",
+  connected: "Connected",
 };
 export const TOUCH_CHANNELS = Object.keys(TOUCH_CHANNEL_LABELS);

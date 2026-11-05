@@ -14,45 +14,67 @@ export const isSalesSource = (s: string | null | undefined) =>
 
 export type OutcomeKey =
   | "no_answer"
+  | "left_voicemail"
   | "not_available"
-  | "emailed"
-  | "visited"
   | "interested"
   | "not_interested"
-  | "booked_call";
+  | "booked_call"
+  | "emailed"
+  | "connection_sent"
+  | "connected"
+  | "messaged";
+
+export type OutcomeGroup = "call" | "email" | "linkedin";
+export const OUTCOME_GROUPS: [OutcomeGroup, string][] = [
+  ["call", "Call result"],
+  ["email", "Email"],
+  ["linkedin", "LinkedIn"],
+];
 
 // How a touch reads in rows, History and timelines. Includes outcomes the
-// buttons no longer log (Called (talked), Bad fit) so older touches still
-// show correctly.
-export type DisplayKey = OutcomeKey | "talked" | "bad_fit" | "meeting" | "other";
+// buttons no longer log (Called (talked), Visited, Bad fit) so older
+// touches still show correctly.
+export type DisplayKey = OutcomeKey | "talked" | "visited" | "bad_fit" | "meeting" | "other";
 
 export type Outcome = {
   key: OutcomeKey;
   label: string;
+  group: OutcomeGroup;
   // "last": the business's most recent touch channel (an answer comes back
   // on the channel we used), else cold_call.
   channel: string | "last";
   direction: "outbound" | "inbound";
-  outcome: string;
+  outcome: string | null;
   // Opens Move to Interested after saving (when the user may edit).
   opensMove?: boolean;
   // Opens a small form before saving (who we spoke with). Not in the bulk bar.
   needsForm?: boolean;
-  // The toast offers a follow-up (next_action "Follow up: call" / "email").
-  followUp?: "call" | "email";
+  // The toast offers a follow-up (next_action "Follow up: call" / "email" / "LinkedIn").
+  followUp?: "call" | "email" | "linkedin";
+  // Side preview: opens the Draft email modal instead of saving; its "Mark
+  // as sent" logs it. (The bulk bar logs it directly.)
+  opensDraft?: boolean;
+  // After saving, ask for the business owner's LinkedIn profile if empty.
+  asksLinkedin?: boolean;
 };
 
+// Migrations 023/024. Only Interested and Booked call open Move to Interested.
 export const OUTCOMES: Outcome[] = [
-  { key: "no_answer", label: "No answer", channel: "cold_call", direction: "outbound", outcome: "no_answer", followUp: "call" },
-  // Reached someone, not the decision maker (migration 023). details:
-  // {spoke_with, role, email}; the summary is what they said.
-  { key: "not_available", label: "Not available", channel: "cold_call", direction: "outbound", outcome: "not_available", needsForm: true, followUp: "call" },
-  { key: "emailed", label: "Emailed", channel: "email", direction: "outbound", outcome: "sent", followUp: "email" },
-  { key: "visited", label: "Visited", channel: "in_person", direction: "outbound", outcome: "sent" },
-  { key: "interested", label: "Interested", channel: "last", direction: "inbound", outcome: "interested", opensMove: true },
-  { key: "not_interested", label: "Not interested", channel: "last", direction: "inbound", outcome: "not_interested" },
+  // CALL RESULT
+  { key: "no_answer", label: "No answer", group: "call", channel: "cold_call", direction: "outbound", outcome: "no_answer", followUp: "call" },
+  { key: "left_voicemail", label: "Left voicemail", group: "call", channel: "voicemail", direction: "outbound", outcome: null, followUp: "call" },
+  // Reached someone, not the decision maker. details {spoke_with, role, email}; the note is what they said.
+  { key: "not_available", label: "Not available", group: "call", channel: "cold_call", direction: "outbound", outcome: "not_available", needsForm: true, followUp: "call" },
+  { key: "interested", label: "Interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "interested", opensMove: true },
+  { key: "not_interested", label: "Not interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "not_interested" },
   // meeting_booked: the touch trigger sets status interested.
-  { key: "booked_call", label: "Booked call", channel: "cold_call", direction: "outbound", outcome: "meeting_booked", opensMove: true },
+  { key: "booked_call", label: "Booked call", group: "call", channel: "cold_call", direction: "outbound", outcome: "meeting_booked", opensMove: true },
+  // EMAIL. details {to}.
+  { key: "emailed", label: "Emailed", group: "email", channel: "email", direction: "outbound", outcome: "sent", opensDraft: true, followUp: "email" },
+  // LINKEDIN
+  { key: "connection_sent", label: "Connection sent", group: "linkedin", channel: "linkedin_connect", direction: "outbound", outcome: "sent", asksLinkedin: true, followUp: "linkedin" },
+  { key: "connected", label: "Connected", group: "linkedin", channel: "linkedin_connect", direction: "outbound", outcome: "connected", asksLinkedin: true },
+  { key: "messaged", label: "Messaged", group: "linkedin", channel: "linkedin_dm", direction: "outbound", outcome: "sent", asksLinkedin: true, followUp: "linkedin" },
 ];
 
 export const outcomeByKey = (k: OutcomeKey) => OUTCOMES.find((o) => o.key === k)!;
@@ -90,7 +112,11 @@ export function classifyTouch(t: Pick<LatestTouch, "channel" | "outcome">): { ke
   if (o === "not_interested") return { key: "not_interested", label: "Not interested" };
   if (o === "bad_fit") return { key: "bad_fit", label: "Bad fit" };
   if (o === "not_available") return { key: "not_available", label: "Not available" };
-  if (t.channel === "voicemail" || (t.channel === "cold_call" && o === "no_answer")) return { key: "no_answer", label: "No answer" };
+  if (t.channel === "voicemail") return { key: "left_voicemail", label: "Left voicemail" };
+  if (t.channel === "cold_call" && o === "no_answer") return { key: "no_answer", label: "No answer" };
+  if (t.channel === "linkedin_connect" && o === "connected") return { key: "connected", label: "Connected" };
+  if (t.channel === "linkedin_connect" && (o === "sent" || !o)) return { key: "connection_sent", label: "Connection sent" };
+  if (t.channel === "linkedin_dm" && (o === "sent" || !o)) return { key: "messaged", label: "Messaged" };
   if (t.channel === "cold_call" && !o) return { key: "talked", label: "Called (talked)" };
   if (t.channel === "email" && (o === "sent" || !o)) return { key: "emailed", label: "Emailed" };
   if (t.channel === "in_person" && (o === "sent" || !o)) return { key: "visited", label: "Visited" };
@@ -101,7 +127,11 @@ export function classifyTouch(t: Pick<LatestTouch, "channel" | "outcome">): { ke
 // Badge class (lead-finder.css .st-*).
 export const OUTCOME_CLASS: Record<DisplayKey | "moved", string> = {
   no_answer: "st-new",
+  left_voicemail: "st-new",
   not_available: "st-new",
+  connection_sent: "st-contacted",
+  connected: "st-contacted",
+  messaged: "st-contacted",
   talked: "st-contacted",
   emailed: "st-contacted",
   visited: "st-contacted",
@@ -125,8 +155,8 @@ const CHANNEL_VERB: Record<string, string> = {
   in_person: "Visited",
   meeting: "Met",
   text: "Texted",
-  linkedin_dm: "Messaged on LinkedIn",
-  linkedin_connect: "Connected on LinkedIn",
+  linkedin_dm: "LinkedIn",
+  linkedin_connect: "LinkedIn",
   loom: "Sent a Loom",
 };
 
