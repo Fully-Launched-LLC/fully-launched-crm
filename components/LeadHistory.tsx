@@ -39,7 +39,7 @@ export default function LeadHistory({ history, teamMembers }: { history: Project
           <div key={l.id} className="mt-3 space-y-2 text-sm">
             <p className="text-neutral-600">
               From lead{" "}
-              <a href={`/leads?lead=${l.id}`} className="font-medium text-accent hover:underline">
+              <a href={`/sales?lead=${l.id}`} className="font-medium text-accent hover:underline">
                 {l.company ?? "lead"}
               </a>
               {" · "}

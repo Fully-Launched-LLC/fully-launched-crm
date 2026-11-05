@@ -16,7 +16,7 @@ import { buildCallScript, type PitchKey } from "@/lib/lead-finder/callScript";
 // leads.audit / audit_at (RLS decides who may).
 
 const LABELS: Record<ServiceKey, string> = { website: "Website", social: "Social", ecom: "E-commerce", ai: "AI" };
-const RLS_HINT = "A Salesperson can only change leads they own or that have no owner.";
+const RLS_HINT = "A Salesperson can only change businesses they own or that have no owner.";
 
 type Part1 = { lead: ScannedPlace; speedUrl: string | null; previewUrl: string };
 type Speed = PageSpeed | null | "loading";
@@ -142,9 +142,9 @@ export default function AuditReport({
         .update({ audit: body, audit_at: ranAt })
         .eq("id", leadId)
         .select("id");
-      if (err) setSave({ tone: "bad", text: "Not saved to the lead: " + err.message });
-      else if (!data?.length) setSave({ tone: "bad", text: "Not saved to the lead. " + RLS_HINT });
-      else setSave({ tone: "ok", text: "Saved to the lead." });
+      if (err) setSave({ tone: "bad", text: "Not saved: " + err.message });
+      else if (!data?.length) setSave({ tone: "bad", text: "Not saved. " + RLS_HINT });
+      else setSave({ tone: "ok", text: "Saved to this business." });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId, fromSaved, L, ranAt, speed]);

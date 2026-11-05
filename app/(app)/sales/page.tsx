@@ -4,14 +4,16 @@ import type { TeamMember } from "@/lib/types";
 import type { LeadFinderRun } from "@/lib/lead-finder/types";
 import LeadFinder from "@/components/lead-finder/LeadFinder";
 
-// Lead Finder: search Google for local businesses, scan their websites, and
-// add the good ones to the shared lead list. Everyone can run a quick
-// search; area sweeps are Admin/Manager (RLS enforces both). ?run=<id> opens
-// a run, so a refresh or another team member sees the same progress.
-export default async function LeadFinderPage({
+// Sales: Find (search Google for local businesses, scan their websites, log
+// outcomes) and History (every Sales business and its latest outcome).
+// Everyone can run a quick search; area sweeps are Admin/Manager (RLS
+// enforces both). ?run=<id> opens a run, so a refresh or another team member
+// sees the same progress; ?view=history or ?lead=<id> opens History.
+// /leads and /lead-finder redirect here (next.config.mjs), query kept.
+export default async function SalesPage({
   searchParams,
 }: {
-  searchParams: { run?: string };
+  searchParams: { run?: string; lead?: string; view?: string };
 }) {
   const teamMember = await getCurrentTeamMember();
   const supabase = createClient();
@@ -43,6 +45,8 @@ export default async function LeadFinderPage({
       recentRuns={(runs ?? []) as LeadFinderRun[]}
       initialRunId={searchParams.run ?? null}
       fallbackRunId={mine?.[0]?.id ?? null}
+      initialTab={searchParams.lead || searchParams.view === "history" ? "history" : "find"}
+      initialLeadId={searchParams.lead ?? null}
     />
   );
 }

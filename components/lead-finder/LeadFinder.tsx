@@ -7,11 +7,12 @@ import { LF_FONT_VARS } from "@/components/lead-finder/fonts";
 import Dropdown from "@/components/lead-finder/Dropdown";
 import RocketStage, { type Phase } from "@/components/lead-finder/RocketStage";
 import MissionControl, { type Svc } from "@/components/lead-finder/MissionControl";
+import SalesHistory from "@/components/sales/SalesHistory";
 import LocalDateTime from "@/components/LocalDateTime";
 import { SessionExpiredError, apiFetch, readLastRun, writeLastRun } from "@/lib/lead-finder/apiFetch";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
-import type { LeadFinderRun, RunProgress, RunResult } from "@/lib/lead-finder/types";
+import type { LeadFinderRun, RunProgress, RunResult, SearchParams, SweepParams } from "@/lib/lead-finder/types";
 import {
   COST_PER_SEARCH,
   MAX_SWEEP_SEARCHES,
@@ -25,14 +26,18 @@ import {
   sweepPlan,
 } from "@/lib/lead-finder/sweep";
 
-// Matteo's Lead Finder UI (launch pad + mission control) on top of the CRM's
-// Supabase-backed runs: POST /api/lead-finder/runs creates a run, this tab
-// drives it with /step calls while the rocket launches, and ?run=<id> lets a
-// refresh or a teammate open the same run. Styles: lead-finder.css, scoped
-// to .lf-root.
+// Sales (/sales): Matteo's Lead Finder UI under one top bar with two views.
+//   Find:    launch pad + mission control on the CRM's Supabase-backed runs.
+//            POST /api/lead-finder/runs creates a run, this tab drives it
+//            with /step calls while the rocket launches, and ?run=<id> lets
+//            a refresh or a teammate open the same run.
+//   History: every Sales business and its latest outcome (?view=history,
+//            ?lead=<id> opens one).
+// Styles: lead-finder.css, scoped to .lf-root.
 
 type Mode = "search" | "sweep";
 type View = "launch" | "mission";
+type Tab = "find" | "history";
 
 const ALL_ON: Svc = { website: true, social: true, ecom: true, ai: true, servicetitan: false };
 const FINISHED = ["done", "failed", "cancelled"];
@@ -62,6 +67,8 @@ export default function LeadFinder({
   recentRuns,
   initialRunId,
   fallbackRunId,
+  initialTab,
+  initialLeadId,
 }: {
   member: TeamMember | null;
   members: TeamMember[];
@@ -69,11 +76,14 @@ export default function LeadFinder({
   initialRunId: string | null;
   // This user's most recent run, for when there's no ?run= and nothing in localStorage.
   fallbackRunId: string | null;
+  initialTab: Tab;
+  initialLeadId: string | null;
 }) {
   const router = useRouter();
   const pathname = usePathname();
   const canSweep = member?.role === "Admin" || member?.role === "Manager";
   const [view, setView] = useState<View>("launch");
+  const [tab, setTab] = useState<Tab>(initialTab);
 
   // ---- Form ----
   const [mode, setMode] = useState<Mode>("search");
@@ -87,7 +97,8 @@ export default function LeadFinder({
   const [typesText, setTypesText] = useState("");
   const [typesEdited, setTypesEdited] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
-  const [confirmSweep, setConfirmSweep] = useState(false);
+  // The sweep the user confirmed; any change to the form takes it back.
+  const [confirmKey, setConfirmKey] = useState<string | null>(null);
   const typeRef = useRef<HTMLInputElement>(null);
   const launchRef = useRef<HTMLButtonElement>(null);
 
@@ -114,8 +125,10 @@ export default function LeadFinder({
     [radius, typesText, svc]
   );
 
-  // Any change to the sweep takes the confirm step back.
-  useEffect(() => setConfirmSweep(false), [mode, state, city, zip, radius, typesText, svc]);
+  const sweepKey = (f: { state: string; city: string; zip: string; radius: number; typesText: string; svc: Svc }) =>
+    JSON.stringify([f.state, f.city, f.zip, f.radius, f.typesText, f.svc]);
+  const confirmSweep = mode === "sweep" && confirmKey === sweepKey({ state, city, zip, radius, typesText, svc });
+  const setConfirmSweep = (on: boolean) => setConfirmKey(on ? sweepKey({ state, city, zip, radius, typesText, svc }) : null);
 
   function toggleSvc(k: keyof Svc) {
     setSvc((prev) => ({ ...prev, [k]: !prev[k] }));
@@ -160,6 +173,12 @@ export default function LeadFinder({
   const setRunUrl = useCallback(
     (id: string | null) => router.replace(id ? `${pathname}?run=${id}` : pathname, { scroll: false }),
     [router, pathname]
+  );
+  // History URLs change in place (no server round trip per click).
+  const setHistoryUrl = useCallback(
+    (leadId: string | null) =>
+      window.history.replaceState(null, "", `${pathname}?view=history${leadId ? `&lead=${leadId}` : ""}`),
+    [pathname]
   );
 
   // Set when a request fails because the sign-in is really gone (refresh
@@ -246,17 +265,31 @@ export default function LeadFinder({
     return true;
   }
 
-  // Coming back without ?run= (e.g. the Lead Finder nav tab): reopen this
-  // user's last opened run, else their most recent run, else the launch pad.
+  // Find without ?run= (e.g. the Sales nav tab): reopen this user's last
+  // opened run, else their most recent run, else the launch pad. Starting in
+  // History, this waits until Find is opened.
+  const restored = useRef(false);
+  async function restoreFind() {
+    if (restored.current) return;
+    restored.current = true;
+    if (initialRunId) return void openRun(initialRunId);
+    const last = readLastRun(member?.id);
+    if (last && (await openRun(last, true))) return;
+    if (fallbackRunId && fallbackRunId !== last) await openRun(fallbackRunId, true);
+  }
   useEffect(() => {
-    void (async () => {
-      if (initialRunId) return void openRun(initialRunId);
-      const last = readLastRun(member?.id);
-      if (last && (await openRun(last, true))) return;
-      if (fallbackRunId && fallbackRunId !== last) await openRun(fallbackRunId, true);
-    })();
+    if (initialTab === "find") void restoreFind();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  function showTab(t: Tab) {
+    setTab(t);
+    window.scrollTo(0, 0);
+    if (t === "history") return setHistoryUrl(null);
+    if (run) setRunUrl(run.id);
+    else router.replace(pathname, { scroll: false });
+    void restoreFind();
+  }
 
   // A lost sign-in clears itself: when the tab regains focus (e.g. after
   // signing in again in another tab, which shares the cookies), check again.
@@ -287,6 +320,14 @@ export default function LeadFinder({
       return;
     }
     setConfirmSweep(false);
+    launchWith(
+      mode === "search"
+        ? { kind: "search", state, city: city.trim(), zip: zip.trim(), type: type.trim(), depth, services: stOnly ? ["servicetitan"] : selectedServices }
+        : { kind: "sweep", state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText }
+    );
+  }
+
+  function launchWith(body: Record<string, unknown>) {
     resetStage();
     const reduceMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
     if (reduceMotion) setPhase("orbit");
@@ -294,17 +335,49 @@ export default function LeadFinder({
       setCount(3);
       setPhase("countdown");
     }
-    void start(); // the real search starts right away; the launch plays while it runs
+    void start(body); // the real search starts right away; the launch plays while it runs
   }
 
-  async function start() {
+  // "Re-run for fresh data" (results older than 7 days): the same search
+  // again, form filled in. A quick search launches right away; a sweep
+  // (Admin/Manager) opens its cost confirm on the launch pad first.
+  function rerun(r: LeadFinderRun) {
+    const p = r.params as SearchParams & SweepParams;
+    const services = p.services ?? [];
+    const st = services.includes("servicetitan");
+    const nextSvc: Svc = {
+      website: !st && services.includes("website"),
+      social: !st && services.includes("social"),
+      ecom: !st && services.includes("ecom"),
+      ai: !st && services.includes("ai"),
+      servicetitan: st,
+    };
+    setState(p.state);
+    setCity(p.city ?? "");
+    setZip(p.zip ?? "");
+    setSvc(nextSvc);
+    setFormError(null);
+    showView("launch");
+    if (r.kind === "search") {
+      setMode("search");
+      setType(p.type);
+      setDepth(p.depth);
+      launchWith({ kind: "search", state: p.state, city: p.city, zip: p.zip, type: p.type, depth: p.depth, services });
+    } else {
+      const text = (p.types ?? []).join("\n");
+      setMode("sweep");
+      setRadius(p.radius);
+      setTypesEdited(true);
+      setTypesText(text);
+      resetStage();
+      setConfirmKey(sweepKey({ state: p.state, city: p.city ?? "", zip: p.zip ?? "", radius: p.radius, typesText: text, svc: nextSvc }));
+    }
+  }
+
+  async function start(body: Record<string, unknown>) {
     setRunError(null);
     setResults(null);
     setDriving(false);
-    const body =
-      mode === "search"
-        ? { kind: "search", state, city: city.trim(), zip: zip.trim(), type: type.trim(), depth, services: stOnly ? ["servicetitan"] : selectedServices }
-        : { kind: "sweep", state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText };
     let json: { run?: LeadFinderRun; progress?: RunProgress; error?: string };
     try {
       const res = await apiFetch("/api/lead-finder/runs", {
@@ -462,7 +535,7 @@ export default function LeadFinder({
             : "Systems ready";
   const busyPill = phase === "countdown" || phase === "flying" || phase === "orbit";
 
-  // His touchdown count: leads matching the chosen services.
+  // His touchdown count: businesses matching the chosen services.
   const matched = (results ?? []).filter((r) =>
     svc.servicetitan ? r.place.usesServiceTitan : r.place.services.some((s) => selectedServices.includes(s))
   ).length;
@@ -512,7 +585,7 @@ export default function LeadFinder({
       <div className="stage-card">
         <span className="kicker">{run.status === "cancelled" ? "Mission cancelled" : "Touchdown"}</span>
         <span className="big">
-          {matched} lead{matched === 1 ? "" : "s"}
+          {matched} match{matched === 1 ? "" : "es"}
         </span>
         <span className="card-text">
           {run.params.label} · {results?.length ?? 0} businesses checked
@@ -546,21 +619,16 @@ export default function LeadFinder({
           <div className="brand">
             <div className="mark">FL</div>
             <div>
-              <b>Lead Finder</b>
+              <b>Sales</b>
               <small>FullyLaunched</small>
             </div>
           </div>
-          <nav className="views" aria-label="Lead Finder">
-            <button type="button" aria-current={view === "launch" ? "page" : undefined} onClick={() => showView("launch")}>
-              Launch pad
+          <nav className="views" aria-label="Sales">
+            <button type="button" aria-current={tab === "find" ? "page" : undefined} onClick={() => showTab("find")}>
+              Find
             </button>
-            <button
-              type="button"
-              aria-current={view === "mission" ? "page" : undefined}
-              disabled={!run || !results}
-              onClick={() => showView("mission")}
-            >
-              Mission control
+            <button type="button" aria-current={tab === "history" ? "page" : undefined} onClick={() => showTab("history")}>
+              History
             </button>
           </nav>
         </div>
@@ -569,14 +637,14 @@ export default function LeadFinder({
       {sessionLost && (
         <div className="session-banner" role="alert">
           <span>Your sign-in expired. Your search and results are saved.</span>
-          <a className="btn btn-gold" href={`/login?next=${encodeURIComponent(run ? `/lead-finder?run=${run.id}` : "/lead-finder")}`} target="_blank" rel="noopener">
+          <a className="btn btn-gold" href={`/login?next=${encodeURIComponent(run ? `/sales?run=${run.id}` : "/sales")}`} target="_blank" rel="noopener">
             Sign in again
           </a>
           <span className="hint">Opens in a new tab. Come back here afterwards and this page picks up where it was.</span>
         </div>
       )}
 
-      {view === "launch" && (
+      {tab === "find" && view === "launch" && (
         <div className="launch-view">
           <div className="nebula" aria-hidden="true" />
 
@@ -590,7 +658,7 @@ export default function LeadFinder({
               </span>
               <h1 className="hero">Find your next client before anyone else does.</h1>
               <p className="sub">
-                Pick a market and the services you’re selling. We scan Google, check every business’s website, score what it’s missing and rank the best leads first.
+                Pick a market and the services you’re selling. We scan Google, check every business’s website, score what it’s missing and rank the best prospects first.
               </p>
 
               <div className="console">
@@ -726,7 +794,7 @@ export default function LeadFinder({
                 {canSweep && (
                   <>
                     <button type="button" className="chip" onClick={() => starter("st")}>ServiceTitan users · Wheaton</button>
-                    <button type="button" className="chip" onClick={() => starter("ai")}>AI leads · 5 mi of Wheaton</button>
+                    <button type="button" className="chip" onClick={() => starter("ai")}>AI prospects · 5 mi of Wheaton</button>
                   </>
                 )}
                 <button type="button" className="chip" onClick={() => starter("web")}>Barbershops · Wheaton</button>
@@ -756,18 +824,25 @@ export default function LeadFinder({
         </div>
       )}
 
-      {view === "mission" && run && results && (
+      {tab === "find" && view === "mission" && run && results && (
         <div className="mission-view">
           <MissionControl
             key={run.id}
             run={run}
             results={results}
             members={members}
+            me={member}
             svc={svc}
             onToggleSvc={toggleSvc}
-            onChanged={() => void loadRun(run.id, true)}
             onNewSearch={newSearch}
+            onRerun={run.kind === "search" || canSweep ? () => rerun(run) : null}
           />
+        </div>
+      )}
+
+      {tab === "history" && (
+        <div className="mission-view">
+          <SalesHistory me={member} members={members} initialLeadId={initialLeadId} onSelect={setHistoryUrl} />
         </div>
       )}
     </div>

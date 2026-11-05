@@ -1,55 +1,29 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
-import { apiFetch } from "@/lib/lead-finder/apiFetch";
-import type { LeadStatus, TeamMember } from "@/lib/types";
-import type { LeadFinderRun, RunResult, ScannedPlace, SearchParams, ServiceKey, SweepParams } from "@/lib/lead-finder/types";
+import type { TeamMember } from "@/lib/types";
+import type { ExistingLead, LeadFinderRun, RunResult, ScannedPlace, SearchParams, ServiceKey, SweepParams } from "@/lib/lead-finder/types";
 import { SERVICE_LABELS, SERVICE_ORDER } from "@/lib/lead-finder/sweep";
-import { previewQuery } from "@/lib/lead-finder/previewQuery";
-import { LEAD_STATUS_LABELS, TOUCH_CHANNEL_LABELS, relativeTime } from "@/lib/leads/labels";
+import { logOutcome } from "@/lib/sales/log";
+import { classifyTouch, type Outcome } from "@/lib/sales/outcomes";
 import Dropdown from "@/components/lead-finder/Dropdown";
 import { ROCKET_IDLE_SRC } from "@/components/lead-finder/assets";
 import LocalDateTime from "@/components/LocalDateTime";
+import BusinessDetail from "@/components/sales/BusinessDetail";
+import { LatestOutcome, OutcomeChips, isHiddenOutcome } from "@/components/sales/OutcomeChips";
 
-// Matteo's mission control (results view): stats, tabs, service filter,
-// bulk bar, table, sticky detail panel. His browser-only pipeline status is
-// now the shared leads.status: the four buttons write to the lead, and a
-// business that isn't a lead yet shows "Add to Leads" instead.
+// Matteo's mission control (Sales > Find results): stats, tabs, service
+// filter, bulk bar, table, sticky detail panel. Every row has one-click
+// outcomes; logging one on a business with no record saves it first
+// (lib/sales/log.ts). Businesses already worked show their latest outcome;
+// Not interested / Bad fit are hidden until "Show already contacted".
 
 export type Svc = Record<ServiceKey | "servicetitan", boolean>;
 type Sort = "priority" | "score" | "rating" | "reviews" | "name";
 
 const GAP_LABELS: Record<ServiceKey, string> = { website: "Website", social: "Social", ecom: "E-commerce", ai: "AI" };
-
-// His four pipeline buttons, mapped onto leads.status.
-const PIPELINE: [LeadStatus, string][] = [
-  ["new", "New"],
-  ["contacted", "Contacted"],
-  ["interested", "Interested"],
-  ["not_interested", "Not a fit"],
-];
-const STATUS_TEXT: Record<LeadStatus, string> = { ...LEAD_STATUS_LABELS, not_interested: "Not a fit" };
-const STATUS_CLASS: Record<LeadStatus, string> = {
-  new: "st-new",
-  contacted: "st-contacted",
-  interested: "st-interested",
-  not_interested: "st-nofit",
-  replied: "st-replied",
-  converted: "st-converted",
-  dead: "st-dead",
-};
-
-const MATCHED_ON: Record<string, string> = {
-  google_place_id: "same Google listing",
-  cid: "same Google listing",
-  email: "same email",
-  domain: "same website",
-  phone: "same phone",
-};
-
-const RLS_HINT = "A Salesperson can only change leads they own or that have no owner.";
+const STALE_MS = 7 * 24 * 3600 * 1000;
 
 const noSite = (l: ScannedPlace) => !l.website || l.websiteStatus === "Social page only" || l.websiteStatus === "Broken";
 const hasContact = (l: ScannedPlace) => (l.emails && l.emails.length > 0) || !!l.ownerName;
@@ -61,18 +35,21 @@ export default function MissionControl({
   run,
   results,
   members,
+  me,
   svc,
   onToggleSvc,
-  onChanged,
   onNewSearch,
+  onRerun,
 }: {
   run: LeadFinderRun;
   results: RunResult[];
   members: TeamMember[];
+  me: TeamMember | null;
   svc: Svc;
   onToggleSvc: (k: keyof Svc) => void;
-  onChanged: () => void;
   onNewSearch: () => void;
+  // null: this user can't start this kind of search (sweeps: Admin/Manager).
+  onRerun: (() => void) | null;
 }) {
   const isSweep = run.kind === "sweep";
   const [tab, setTab] = useState("all");
@@ -80,26 +57,27 @@ export default function MissionControl({
   const [sort, setSort] = useState<Sort>("priority");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [minPriority, setMinPriority] = useState(70);
-  const [busy, setBusy] = useState(false);
+  const [showContacted, setShowContacted] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  // Status changes made here, until the next reload of the run's results.
-  const [statusOverride, setStatusOverride] = useState<Record<string, LeadStatus>>({});
+  // Records created or touched here, until the run's results reload.
+  const [overrides, setOverrides] = useState<Record<string, ExistingLead>>({});
   const detailRef = useRef<HTMLElement>(null);
+  const sourceDetail = (run.params as SearchParams | SweepParams).label;
 
-  useEffect(() => setStatusOverride({}), [results]);
+  useEffect(() => setOverrides({}), [results]);
 
-  const statusOf = (r: RunResult): LeadStatus | null =>
-    r.existing ? statusOverride[r.existing.id] ?? (r.existing.status as LeadStatus) : null;
+  const withOverrides = useMemo(
+    () => results.map((r) => (overrides[r.google_place_id] ? { ...r, existing: overrides[r.google_place_id] } : r)),
+    [results, overrides]
+  );
 
-  // His tabs. "Not contacted" = not a lead yet, or a lead still at New.
+  // His tabs. "Not contacted" = no outcome logged yet.
   const TABS: [string, string, (r: RunResult) => boolean][] = [
     ["all", "All", () => true],
     ["nosite", "No real website", (r) => noSite(r.place)],
     ["hot", "Hot (60+)", (r) => r.place.score >= 60],
     ["reach", "Has contact", (r) => hasContact(r.place)],
-    ["fresh", "Not contacted", (r) => !r.existing || statusOf(r) === "new"],
-    ["notlead", "Not in Leads", (r) => !r.existing],
+    ["fresh", "Not contacted", (r) => !r.existing?.last_touch && !r.existing?.project_id],
   ];
 
   // His service filter: ServiceTitan only, or any selected gap.
@@ -107,16 +85,18 @@ export default function MissionControl({
   const current = useMemo(
     () =>
       svc.servicetitan
-        ? results.filter((r) => r.place.usesServiceTitan)
-        : results.filter((r) => r.place.services.some((s) => wanted.includes(s))),
+        ? withOverrides.filter((r) => r.place.usesServiceTitan)
+        : withOverrides.filter((r) => r.place.services.some((s) => wanted.includes(s))),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [results, svc]
+    [withOverrides, svc]
   );
+  const hiddenCount = current.filter((r) => isHiddenOutcome(r.existing)).length;
+  const pool = showContacted ? current : current.filter((r) => !isHiddenOutcome(r.existing));
 
   const test = (TABS.find((t) => t[0] === tab) ?? TABS[0])[2];
   const needle = q.trim().toLowerCase();
   const num = (v: number | "N/A") => (typeof v === "number" ? v : 0);
-  const visible = current
+  const visible = pool
     .filter(test)
     .filter((r) => !needle || r.place.name.toLowerCase().includes(needle))
     .sort((a, b) =>
@@ -132,93 +112,66 @@ export default function MissionControl({
     );
 
   const selected =
-    current.find((r) => r.google_place_id === selectedId) ?? (visible.length ? visible[0] : null);
+    withOverrides.find((r) => r.google_place_id === selectedId) ?? (visible.length ? visible[0] : null);
 
   const checkedRows = current.filter((r) => checked.has(r.google_place_id));
-  const checkedNew = checkedRows.filter((r) => !r.existing);
-  const checkedLeads = checkedRows.filter((r) => r.existing && statusOf(r) !== "converted");
   const allChecked = visible.length > 0 && visible.every((r) => checked.has(r.google_place_id));
-  const minCount = current.filter((r) => !r.existing && r.place.priority >= minPriority && r.place.services.length > 0).length;
 
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown";
 
   // ---- Writes ----
-  async function add(body: { placeIds: string[] } | { minPriority: number }) {
-    setBusy(true);
-    setMessage(null);
-    let res: Response;
-    let json;
-    try {
-      res = await apiFetch(`/api/lead-finder/runs/${run.id}/add`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-      json = await res.json();
-    } catch (e) {
-      setBusy(false);
-      setMessage({ tone: "error", text: (e as Error).message || "Could not add." });
-      return;
-    }
-    setBusy(false);
-    if (!res.ok) {
-      setMessage({ tone: "error", text: json.error ?? "Could not add." });
-      return;
-    }
-    const parts = [`Added ${json.inserted} to Leads.`];
-    if (json.skipped) parts.push(`Skipped ${json.skipped} already on the lead list.`);
-    setMessage({ tone: "ok", text: parts.join(" ") });
-    setChecked(new Set());
-    onChanged();
-  }
-
-  // Writes leads.status. RLS decides who may: a blocked update returns no
-  // rows, so count what came back.
-  async function setStatus(leadIds: string[], status: LeadStatus) {
-    if (!leadIds.length) return;
-    setBusy(true);
-    setMessage(null);
-    const { data, error } = await createClient().from("leads").update({ status }).in("id", leadIds).select("id, status");
-    setBusy(false);
-    if (error) {
-      setMessage({ tone: "error", text: error.message });
-      return;
-    }
-    const updated = (data ?? []) as { id: string; status: LeadStatus }[];
-    setStatusOverride((prev) => {
+  function applySaved(saved: { key: string; existing: ExistingLead }[]) {
+    setOverrides((prev) => {
       const next = { ...prev };
-      updated.forEach((u) => (next[u.id] = u.status));
+      saved.forEach((s) => (next[s.key] = s.existing));
       return next;
     });
-    const missed = leadIds.length - updated.length;
-    if (missed > 0) {
-      setMessage({
-        tone: "error",
-        text:
-          leadIds.length === 1
-            ? `You can't change this lead's status. ${RLS_HINT}`
-            : `Updated ${updated.length}. ${missed} not changed. ${RLS_HINT}`,
-      });
-    } else if (leadIds.length > 1) {
-      setMessage({ tone: "ok", text: `Marked ${updated.length} as ${STATUS_TEXT[status].toLowerCase()}.` });
-      setChecked(new Set());
-    }
   }
 
-  // ---- CSV (his columns, plus Priority; status comes from Leads) ----
+  async function log(rows: RunResult[], o: Outcome, note: string): Promise<string | null> {
+    if (!me) return "You need a team member profile to log outcomes.";
+    setMessage(null);
+    let res;
+    try {
+      res = await logOutcome(
+        createClient(),
+        me.id,
+        rows.map((r) => ({ key: r.google_place_id, place: r.place, searchType: r.search_type, existing: r.existing })),
+        o,
+        note,
+        sourceDetail
+      );
+    } catch (e) {
+      return (e as Error).message || "Could not save.";
+    }
+    applySaved(res.saved);
+    if (rows.length === 1) return res.failed[0]?.reason ?? null;
+    if (res.failed.length) {
+      setMessage({ tone: "error", text: `Logged ${o.label} on ${res.saved.length}. ${res.failed.length} not saved: ${res.failed[0].reason}` });
+    } else {
+      setMessage({ tone: "ok", text: `Logged ${o.label} on ${res.saved.length}.` });
+      setChecked(new Set());
+    }
+    return null;
+  }
+
+  // ---- CSV (his columns, plus Priority and the latest outcome) ----
   function exportCSV(onlyChecked: boolean) {
     const list = onlyChecked ? checkedRows : visible;
     if (!list.length) return;
-    const headers = ["Priority", "Lead Score", "Business Name", "Category", "Address", "Phone", "Google Rating", "Reviews", "Website", "Website Status",
+    const headers = ["Priority", "Score", "Business Name", "Category", "Address", "Phone", "Google Rating", "Reviews", "Website", "Website Status",
       "Possible Owner", "Emails", "Contact Page", "Social Links Found", "Online Store Found", "Marketplaces", "Software Used", "Uses ServiceTitan", "Runs Ads",
-      "Other Signals", "Services Needed", "Website Reasons", "Social Reasons", "E-commerce Reasons", "AI Reasons", "Pipeline Status", "Google Maps Link"];
+      "Other Signals", "Services Needed", "Website Reasons", "Social Reasons", "E-commerce Reasons", "AI Reasons",
+      "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Google Maps Link"];
     const rows = list.map((r) => {
       const l = r.place;
-      const st = statusOf(r);
+      const t = r.existing?.last_touch ?? null;
+      const outcome = r.existing?.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
       return [l.priority, l.score, l.name, l.category, l.address, l.phone, l.rating, l.reviews, l.website, l.websiteStatus,
         l.ownerName || "", (l.emails || []).join("; "), l.contactPage || "", (l.socials || []).join("; "), l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
         l.usesServiceTitan ? "Yes" : "", (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
-        l.tags.website.join("; "), l.tags.social.join("; "), l.tags.ecom.join("; "), l.tags.ai.join("; "), st ? STATUS_TEXT[st] : "Not in Leads", l.mapsUrl];
+        l.tags.website.join("; "), l.tags.social.join("; "), l.tags.ecom.join("; "), l.tags.ai.join("; "),
+        outcome, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "", l.mapsUrl];
     });
     const csv = [headers, ...rows].map((r) => r.map((c) => '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"').join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
@@ -228,7 +181,7 @@ export default function MissionControl({
     const place = [p.city, p.zip, p.state].map(slug).filter(Boolean).join("-");
     a.href = url;
     a.download =
-      [svc.servicetitan ? "SERVICETITAN-leads" : "fullylaunched-leads", place, new Date().toISOString().slice(0, 10)].filter(Boolean).join("-") + ".csv";
+      [svc.servicetitan ? "SERVICETITAN-sales" : "fullylaunched-sales", place, new Date().toISOString().slice(0, 10)].filter(Boolean).join("-") + ".csv";
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -250,7 +203,9 @@ export default function MissionControl({
   const hot = current.filter((r) => r.place.score >= 60).length;
   const ns = current.filter((r) => noSite(r.place)).length;
   const reach = current.filter((r) => hasContact(r.place)).length;
-  const inLeads = current.filter((r) => r.existing).length;
+  const contacted = current.filter((r) => r.existing?.last_touch || r.existing?.project_id).length;
+  const resultsAt = run.finished_at ?? run.updated_at;
+  const stale = Date.now() - new Date(resultsAt).getTime() > STALE_MS;
   const stat = (label: string, val: number, color?: string) => (
     <div className="panel stat" key={label}>
       <span>{label}</span>
@@ -268,12 +223,22 @@ export default function MissionControl({
             <div className="kicker">{run.status === "cancelled" ? "Mission cancelled" : "Mission landed"}</div>
             <h2>{run.params.label || "Results"}</h2>
             <div className="meta">
-              {isSweep ? "Area sweep" : "Quick search"} by {memberName(run.run_by)} · <LocalDateTime iso={run.created_at} /> · est.{" "}
-              {money(Number(run.est_cost ?? 0))}
+              {isSweep ? "Area sweep" : "Quick search"} by {memberName(run.run_by)} · est. {money(Number(run.est_cost ?? 0))}
             </div>
           </div>
         </div>
-        <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+        <div style={{ display: "flex", flexWrap: "wrap", alignItems: "center", gap: 8 }}>
+          <span className="mc-when">
+            Results from <LocalDateTime iso={resultsAt} /> · {run.params.label}
+            {stale && onRerun && (
+              <>
+                {" "}
+                <button type="button" className="linkbtn" onClick={onRerun}>
+                  Re-run for fresh data
+                </button>
+              </>
+            )}
+          </span>
           <button type="button" className="btn" onClick={() => exportCSV(false)}>
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
@@ -292,25 +257,25 @@ export default function MissionControl({
 
       <section className="stats" aria-label="Mission stats">
         {stat("Businesses checked", results.length)}
-        {stat("Leads matched", current.length, "var(--gold)")}
+        {stat("Matches", current.length, "var(--gold)")}
         {stat("No real website", ns, "var(--web)")}
-        {stat("Hot leads (60+)", hot, "var(--warn)")}
+        {stat("Hot (60+)", hot, "var(--warn)")}
         {stat("Owner or email found", reach, "var(--good)")}
-        {stat("Already in Leads", inLeads, "var(--ai)")}
+        {stat("Already contacted", contacted, "var(--ai)")}
       </section>
 
       <div className="work">
-        <section className="panel list" aria-label="Leads">
+        <section className="panel list" aria-label="Businesses">
           <div className="toolbar">
-            <div className="tabs" role="tablist" aria-label="Filter leads">
+            <div className="tabs" role="tablist" aria-label="Filter businesses">
               {TABS.map(([key, text, t]) => (
                 <button key={key} type="button" role="tab" className="tab" aria-selected={tab === key} onClick={() => setTab(key)}>
-                  {text} <span className="n">{current.filter(t).length}</span>
+                  {text} <span className="n">{pool.filter(t).length}</span>
                 </button>
               ))}
             </div>
             <div className="tools">
-              <label className="sr" htmlFor="lf-q">Search leads</label>
+              <label className="sr" htmlFor="lf-q">Search businesses</label>
               <input className="field" id="lf-q" type="search" placeholder="Search by name…" value={q} onChange={(e) => setQ(e.target.value)} />
               <Dropdown
                 label="Sort by"
@@ -337,45 +302,19 @@ export default function MissionControl({
                 </button>
               ))}
             </div>
+            <label className="toggle">
+              <input type="checkbox" className="chk" checked={showContacted} onChange={(e) => setShowContacted(e.target.checked)} />
+              Show already contacted ({hiddenCount})
+            </label>
           </div>
-
-          {isSweep && (
-            <div className="filterbar">
-              <span>Add all with priority at least</span>
-              <input
-                className="field mono"
-                type="number"
-                min={1}
-                max={95}
-                aria-label="Minimum priority"
-                value={minPriority}
-                onChange={(e) => setMinPriority(Math.max(1, Number(e.target.value) || 1))}
-              />
-              <button type="button" className="btn btn-gold" disabled={busy || minCount === 0} onClick={() => void add({ minPriority })}>
-                Add {minCount} to Leads
-              </button>
-            </div>
-          )}
 
           {checked.size > 0 && (
             <div className="bulk">
               <b>{checked.size} selected</b>
+              <div className="bulk-out">
+                <OutcomeChips disabled={!me} onSave={(o, note) => log(checkedRows, o, note)} />
+              </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-                {checkedNew.length > 0 && (
-                  <button type="button" className="btn btn-gold" disabled={busy} onClick={() => void add({ placeIds: checkedNew.map((r) => r.google_place_id) })}>
-                    Add {checkedNew.length} to Leads
-                  </button>
-                )}
-                {checkedLeads.length > 0 && (
-                  <>
-                    <button type="button" className="btn" disabled={busy} onClick={() => void setStatus(checkedLeads.map((r) => r.existing!.id), "contacted")}>
-                      Mark contacted
-                    </button>
-                    <button type="button" className="btn" disabled={busy} onClick={() => void setStatus(checkedLeads.map((r) => r.existing!.id), "interested")}>
-                      Mark interested
-                    </button>
-                  </>
-                )}
                 <button type="button" className="btn" onClick={() => exportCSV(true)}>
                   Export selected
                 </button>
@@ -402,7 +341,7 @@ export default function MissionControl({
                     <input
                       type="checkbox"
                       className="chk"
-                      aria-label="Select all shown leads"
+                      aria-label="Select all shown businesses"
                       checked={allChecked}
                       onChange={(e) =>
                         setChecked((prev) => {
@@ -414,11 +353,11 @@ export default function MissionControl({
                     />
                   </th>
                   <th title="Who to call first: established businesses missing one or two of our branches">Priority</th>
-                  <th title="Matteo's lead score: how many gaps, and how big">Score</th>
+                  <th title="Matteo's score: how many gaps, and how big">Score</th>
                   <th>Business</th>
                   <th>Rating</th>
                   <th>Gaps we can fill</th>
-                  <th>Status</th>
+                  <th>Log outcome</th>
                 </tr>
               </thead>
               <tbody>
@@ -426,10 +365,14 @@ export default function MissionControl({
                   visible.map((r) => {
                     const l = r.place;
                     const city = (l.address || "").split(",").slice(-3, -1).join(",").trim();
-                    const st = statusOf(r);
                     const isSel = selected?.google_place_id === r.google_place_id;
+                    const touched = !!(r.existing?.last_touch || r.existing?.project_id);
                     return (
-                      <tr key={r.google_place_id} className={`lead${isSel ? " sel" : ""}`} onClick={() => open(r.google_place_id)}>
+                      <tr
+                        key={r.google_place_id}
+                        className={`lead${isSel ? " sel" : ""}${touched ? " touched" : ""}`}
+                        onClick={() => open(r.google_place_id)}
+                      >
                         <td onClick={(e) => e.stopPropagation()}>
                           <input
                             type="checkbox"
@@ -468,6 +411,7 @@ export default function MissionControl({
                               <span className="site-flag">{l.websiteStatus}</span>
                             )}
                           </div>
+                          <LatestOutcome existing={r.existing} memberName={memberName} />
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {l.rating !== "N/A" ? (
@@ -486,17 +430,8 @@ export default function MissionControl({
                             ))}
                           </div>
                         </td>
-                        <td onClick={(e) => e.stopPropagation()}>
-                          {st ? (
-                            <>
-                              <span className={`st ${STATUS_CLASS[st]}`}>{STATUS_TEXT[st]}</span>
-                              <div className="meta">{r.existing!.owner ? memberName(r.existing!.owner) : "Unassigned"}</div>
-                            </>
-                          ) : (
-                            <button type="button" className="btn-add" disabled={busy} onClick={() => void add({ placeIds: [r.google_place_id] })}>
-                              Add to Leads
-                            </button>
-                          )}
+                        <td className="oc-cell">
+                          <OutcomeChips disabled={!me} onSave={(o, note) => log([r], o, note)} />
                         </td>
                       </tr>
                     );
@@ -506,7 +441,9 @@ export default function MissionControl({
                     <td colSpan={7}>
                       <div className="empty-list">
                         {current.length
-                          ? "No leads in this view."
+                          ? hiddenCount && !showContacted
+                            ? "Nothing new in this view. Turn on Show already contacted to see the rest."
+                            : "No businesses in this view."
                           : `Checked ${results.length} businesses. None matched${
                               svc.servicetitan
                                 ? ": no ServiceTitan users spotted. Many only use it inside the office, so it doesn’t show on their website."
@@ -520,195 +457,28 @@ export default function MissionControl({
             </table>
           </div>
           <div className="foot">
-            Showing {visible.length} of {current.length} leads · pipeline status is shared with the team on{" "}
-            <Link href="/leads">Leads</Link>
+            Showing {visible.length} of {current.length} businesses · outcomes are shared with the whole team (see History)
           </div>
         </section>
 
-        <aside ref={detailRef} className="panel detail" aria-label="Lead details">
+        <aside ref={detailRef} className="panel detail" aria-label="Business details">
           {selected ? (
-            <Detail r={selected} status={statusOf(selected)} busy={busy} memberName={memberName}
-              onAdd={() => void add({ placeIds: [selected.google_place_id] })}
-              onStatus={(s) => void setStatus([selected.existing!.id], s)} />
+            <BusinessDetail
+              key={selected.google_place_id}
+              r={selected}
+              me={me}
+              members={members}
+              sourceDetail={sourceDetail}
+              onSaved={(ex) => applySaved([{ key: selected.google_place_id, existing: ex }])}
+            />
           ) : (
             <>
-              <div className="kicker">Lead detail</div>
+              <div className="kicker">Business</div>
               <p className="meta">Select a business to see everything we found.</p>
             </>
           )}
         </aside>
       </div>
     </main>
-  );
-}
-
-function Detail({
-  r,
-  status,
-  busy,
-  memberName,
-  onAdd,
-  onStatus,
-}: {
-  r: RunResult;
-  status: LeadStatus | null;
-  busy: boolean;
-  memberName: (id: string | null) => string;
-  onAdd: () => void;
-  onStatus: (s: LeadStatus) => void;
-}) {
-  const l = r.place;
-  const tel = l.phone && l.phone !== "No phone listed" ? l.phone.replace(/[^0-9+]/g, "") : "";
-  const preview = "/api/lead-finder/preview?" + previewQuery({ ...l, type: r.search_type || l.category });
-  const ex = r.existing;
-  // His audit page (app/lead-finder/audit). With a lead id the result is
-  // saved to leads.audit, and a saved audit reopens without a Google call.
-  const audit =
-    "/lead-finder/audit?" +
-    new URLSearchParams({ place: r.google_place_id, type: r.search_type || l.category || "", ...(ex ? { lead: ex.id } : {}) }).toString();
-  const inPipeline = status ? PIPELINE.some(([k]) => k === status) : false;
-
-  return (
-    <>
-      <div className="d-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="kicker">Lead detail</div>
-          <h3>{l.name}</h3>
-          <div className="meta">{[l.category, l.address].filter(Boolean).join(" · ")}</div>
-          {(l.usesServiceTitan || (l.marketplaces ?? []).length > 0) && (
-            <div style={{ marginTop: 6 }}>
-              {l.marketplaces?.length ? <span className="hint">Sells on </span> : null}
-              {(l.marketplaces ?? []).map((m) => (
-                <span key={m} className="badge-mkt">{m}</span>
-              ))}
-              {l.usesServiceTitan && <span className="badge-st">ServiceTitan</span>}
-            </div>
-          )}
-        </div>
-        <div className="d-score">
-          <div>
-            <b style={{ color: "var(--bright)" }}>{l.priority}</b>
-            <small>priority</small>
-          </div>
-          <div>
-            <b className={scoreClass(l.score)}>{l.score}</b>
-            <small>lead score</small>
-          </div>
-        </div>
-      </div>
-
-      <div className="actions">
-        {tel ? <a className="btn" href={`tel:${tel}`}>Call</a> : <button type="button" className="btn" disabled>No phone</button>}
-        <a className="btn" href={l.mapsUrl} target="_blank" rel="noopener noreferrer">Google Maps</a>
-        {l.website ? (
-          <a className="btn" href={l.website} target="_blank" rel="noopener noreferrer">Visit site</a>
-        ) : (
-          <button type="button" className="btn" disabled>No website</button>
-        )}
-        <a className="btn" href={preview} target="_blank" rel="noopener noreferrer">Preview site</a>
-        <a className="btn btn-gold" style={{ gridColumn: "1 / -1" }} href={audit} target="_blank" rel="noopener noreferrer">
-          Run audit
-        </a>
-      </div>
-
-      <div>
-        <div className="sec-title">Pipeline</div>
-        {ex && status ? (
-          <>
-            <div className="seg" role="group" aria-label="Pipeline status">
-              {PIPELINE.map(([k, text]) => (
-                <button
-                  key={k}
-                  type="button"
-                  aria-pressed={status === k}
-                  disabled={busy || status === "converted"}
-                  onClick={() => status !== k && onStatus(k)}
-                >
-                  {text}
-                </button>
-              ))}
-            </div>
-            <p className="hint" style={{ marginTop: 6 }}>
-              {!inPipeline && <>On Leads as <b>{STATUS_TEXT[status]}</b>. </>}
-              Owner: {ex.owner ? memberName(ex.owner) : "Unassigned"} ·{" "}
-              {ex.last_touch_at
-                ? `${TOUCH_CHANNEL_LABELS[ex.last_touch_channel ?? ""] ?? "Touched"} ${relativeTime(ex.last_touch_at)}`
-                : "No touches yet"}
-              {" · "}Already a lead ({MATCHED_ON[ex.matched_on]}
-              {ex.company && ex.company !== l.name ? `: ${ex.company}` : ""})
-            </p>
-          </>
-        ) : (
-          <>
-            <button type="button" className="btn btn-gold" style={{ width: "100%", minHeight: 44 }} disabled={busy} onClick={onAdd}>
-              Add to Leads
-            </button>
-            <p className="hint" style={{ marginTop: 6 }}>Not on the lead list yet. Adding makes you the owner.</p>
-          </>
-        )}
-      </div>
-
-      <div>
-        <div className="sec-title">Contact</div>
-        <div className="contact-list">
-          {l.ownerName && (
-            <div>
-              <b>{l.ownerName}</b> <span className="hint">possible owner</span>
-            </div>
-          )}
-          {tel && <a href={`tel:${tel}`}>{l.phone}</a>}
-          {l.emails.map((m) => (
-            <a key={m} href={`mailto:${m}`}>{m}</a>
-          ))}
-          {l.contactPage && (
-            <a href={l.contactPage} target="_blank" rel="noopener noreferrer">Contact page</a>
-          )}
-          {!l.ownerName && !tel && !l.emails.length && !l.contactPage && <span className="meta">No contact found</span>}
-        </div>
-      </div>
-
-      <div>
-        <div className="sec-title">What they need</div>
-        {SERVICE_ORDER.filter((s) => l.services.includes(s)).map((s) => (
-          <div key={s} className={`need ${s}`}>
-            <b>{SERVICE_LABELS[s]}</b>
-            <ul>
-              {l.tags[s].map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        {l.services.length === 0 && <p className="meta">No gaps flagged.</p>}
-      </div>
-
-      {l.signals.length > 0 && (
-        <div className="info">
-          <span className="kicker">Worth knowing</span>
-          {l.signals.map((s, i) => (
-            <span key={s}>
-              {i > 0 && <br />}
-              {s}
-            </span>
-          ))}
-        </div>
-      )}
-      {l.complaints.length > 0 && (
-        <div className="info">
-          <span className="kicker">From their reviews</span>
-          {l.complaints.map((c, i) => (
-            <span key={c}>
-              {i > 0 && (
-                <>
-                  <br />
-                  <br />
-                </>
-              )}
-              “{c}”
-            </span>
-          ))}
-        </div>
-      )}
-    </>
   );
 }

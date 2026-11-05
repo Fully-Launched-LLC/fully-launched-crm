@@ -279,3 +279,45 @@
 /* Marketplace badges (CRM e-commerce rule): where the business already sells. */
 .lf-root .badge-mkt{display:inline-block;margin-left:6px;vertical-align:2px;font:700 10.5px var(--lf-mono),monospace;color:var(--ecom);background:var(--ecom-bg);border:1px solid rgba(143,214,168,.35);padding:1px 6px;border-radius:4px;}
 .lf-root .d-head .badge-mkt:first-of-type{margin-left:0;}
+
+/* ---------- Sales (CRM addition): outcomes, History ---------- */
+.lf-root .oc-chips{display:flex;flex-wrap:wrap;gap:4px;}
+.lf-root .oc{min-height:28px;padding:0 8px;border:1px solid var(--line3);border-radius:7px;background:#0F1729;color:var(--muted);font-weight:600;font-size:11.5px;white-space:nowrap;}
+.lf-root .oc:hover{border-color:var(--gold);color:var(--ink);}
+.lf-root .oc.neg{color:var(--faint);}
+.lf-root .oc[aria-pressed="true"]{background:var(--gold);border-color:var(--gold);color:var(--gold-ink);}
+.lf-root .oc:disabled{opacity:.45;cursor:not-allowed;}
+.lf-root .oc-chips.big{gap:6px;}
+.lf-root .oc-chips.big .oc{min-height:40px;padding:0 12px;font-size:13px;}
+.lf-root .oc-cell{min-width:230px;}
+.lf-root .oc-note{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:10px;border:1px solid var(--gold);border-radius:10px;background:rgba(212,178,127,.08);}
+.lf-root .oc-note em{font-style:normal;color:var(--dim);}
+.lf-root .oc-note .field{height:36px;font-size:13px;border-radius:8px;width:100%;}
+.lf-root .oc-note .error{padding:6px 10px;font-size:12.5px;}
+.lf-root .oc-note .row-btns{display:flex;gap:6px;}
+.lf-root .oc-note .btn{min-height:32px;}
+.lf-root .bulk-out{flex:1 1 320px;min-width:0;}
+.lf-root .latest{margin-top:6px;font-size:12.5px;color:var(--faint);}
+.lf-root .latest .st{padding:2px 8px;font-size:11px;}
+.lf-root .latest-note{margin-top:3px;color:var(--muted);font-style:italic;font-size:12.5px;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;}
+.lf-root .detail .latest-note{display:block;-webkit-line-clamp:unset;}
+.lf-root tr.lead.touched{background:rgba(156,194,245,.035);}
+.lf-root tr.lead.touched:hover{background:#111A2C;}
+.lf-root tr.lead.touched.sel{background:#141F35;}
+.lf-root .toggle{display:inline-flex;align-items:center;gap:8px;margin-left:auto;font-size:13px;font-weight:600;color:var(--muted);cursor:pointer;}
+.lf-root .toggle .chk{margin-top:0;}
+.lf-root .mc-when{font-size:12.5px;color:var(--faint);}
+.lf-root .linkbtn{border:0;background:transparent;padding:0;color:var(--gold);font-weight:700;text-decoration:underline;font-size:12.5px;}
+.lf-root .linkbtn:hover{color:var(--gold-hi);}
+.lf-root .timeline{list-style:none;display:flex;flex-direction:column;gap:10px;}
+.lf-root .timeline li{padding-left:12px;border-left:2px solid var(--line3);font-size:13px;}
+.lf-root .next-form{display:grid;grid-template-columns:1fr;gap:6px;}
+.lf-root .next-form .field{height:40px;font-size:13px;border-radius:10px;}
+.lf-root .next-form .btn{justify-self:start;}
+.lf-root .bad-text{color:var(--bad);}
+.lf-root .overdue{color:var(--bad);font-weight:700;}
+.lf-root input[type="date"],.lf-root input[type="datetime-local"]{color-scheme:dark;}
+.lf-root .hist-filters{padding:8px 0;align-items:center;}
+.lf-root .hist-filters .field{min-width:200px;}
+.lf-root .hist-filters .date-f{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;color:var(--faint);}
+.lf-root .hist-filters .date-f .field{min-width:0;width:150px;}

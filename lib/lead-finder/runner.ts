@@ -11,8 +11,8 @@ import {
 } from "@/lib/lead-finder/sweep";
 import { googleLocate, googleTextSearch, LeadFinderConfigError, type GooglePlace } from "@/lib/lead-finder/google";
 import { mapLimit, scanPlace, SCAN_CONCURRENCY } from "@/lib/lead-finder/scanner";
-import { leadFromScan } from "@/lib/lead-finder/toLead";
-import { findLeadMatches, upsertLeads, type UpsertSummary } from "@/lib/leads/upsert";
+import { findLeadMatches } from "@/lib/leads/upsert";
+import { SALES_SOURCES, type LatestTouch } from "@/lib/sales/outcomes";
 import type {
   ExistingLead,
   LeadFinderRun,
@@ -379,7 +379,9 @@ async function scannedResults(supabase: SupabaseClient, runId: string): Promise<
 
 // Every result is checked against existing leads with the database's match
 // rule (find_lead_matches, migration 018: place id, cid, email, domain,
-// phone, chain rule) so nobody re-adds or re-contacts one.
+// phone, chain rule) so nobody contacts a business twice. Only Sales records
+// (source in SALES_SOURCES) are attached; legacy outreach rows never show in
+// Sales.
 export async function runResults(supabase: SupabaseClient, runId: string): Promise<RunResult[]> {
   const rows = await scannedResults(supabase, runId);
   const found = await findLeadMatches(
@@ -396,31 +398,49 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
     })
   );
 
-  // The matched leads' current status, owner and last touch.
-  type LeadRow = { id: string; company: string | null; status: string; owner: string | null; last_touch_at: string | null };
+  type LeadRow = {
+    id: string;
+    company: string | null;
+    status: string;
+    owner: string | null;
+    source: string | null;
+    project_id: string | null;
+    next_action: string | null;
+    next_action_at: string | null;
+  };
   const ids = Array.from(new Set(found.filter(Boolean).map((m) => m!.leadId)));
   const byId = new Map<string, LeadRow>();
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await supabase
       .from("leads")
-      .select("id, company, status, owner, last_touch_at")
-      .in("id", ids.slice(i, i + 100));
+      .select("id, company, status, owner, source, project_id, next_action, next_action_at")
+      .in("id", ids.slice(i, i + 100))
+      .in("source", SALES_SOURCES as unknown as string[]);
     if (error) throw new HttpError(500, error.message);
     (data ?? []).forEach((l) => byId.set(l.id, l as LeadRow));
   }
   const matches = found.map((m) => (m && byId.has(m.leadId) ? { row: byId.get(m.leadId)!, on: m.matchedOn } : null));
 
-  // Last touch channel for the leads that matched.
+  // Latest touch (outcome, who, when, note) for the matched businesses.
   const leadIds = Array.from(new Set(matches.filter(Boolean).map((m) => m!.row.id)));
-  const lastChannel = new Map<string, string>();
+  const latest = new Map<string, LatestTouch>();
   for (let i = 0; i < leadIds.length; i += 100) {
     const { data } = await supabase
       .from("lead_touches")
-      .select("lead_id, channel, touched_at")
+      .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at")
       .in("lead_id", leadIds.slice(i, i + 100))
       .order("touched_at", { ascending: false });
     (data ?? []).forEach((t) => {
-      if (!lastChannel.has(t.lead_id)) lastChannel.set(t.lead_id, t.channel);
+      if (!latest.has(t.lead_id)) {
+        latest.set(t.lead_id, {
+          channel: t.channel,
+          direction: t.direction,
+          outcome: t.outcome,
+          summary: t.summary,
+          touched_by: t.touched_by,
+          touched_at: t.touched_at,
+        });
+      }
     });
   }
 
@@ -432,35 +452,13 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
           company: m.row.company,
           status: m.row.status,
           owner: m.row.owner,
-          last_touch_at: m.row.last_touch_at,
-          last_touch_channel: lastChannel.get(m.row.id) ?? null,
+          project_id: m.row.project_id,
+          next_action: m.row.next_action,
+          next_action_at: m.row.next_action_at,
+          last_touch: latest.get(m.row.id) ?? null,
           matched_on: m.on,
         }
       : null;
     return { google_place_id: r.google_place_id, search_type: r.search_type, place: r.payload, existing };
   });
-}
-
-export async function addResults(
-  supabase: SupabaseClient,
-  member: TeamMember,
-  runId: string,
-  opts: { placeIds?: string[]; minPriority?: number }
-): Promise<UpsertSummary> {
-  const run = await getRun(supabase, runId);
-  let rows = await scannedResults(supabase, runId);
-  if (opts.placeIds) {
-    const wanted = new Set(opts.placeIds);
-    rows = rows.filter((r) => wanted.has(r.google_place_id));
-  } else if (typeof opts.minPriority === "number") {
-    rows = rows.filter((r) => r.payload.priority >= opts.minPriority! && r.payload.services.length > 0);
-  } else {
-    throw new HttpError(400, "Say which results to add.");
-  }
-  if (!rows.length) return { inserted: 0, merged: 0, skipped: 0, outcomes: [] };
-  const sourceDetail = (run.params as SearchParams | SweepParams).label;
-  const leads = rows.map((r) =>
-    leadFromScan(r.payload, { searchType: r.search_type, sourceDetail, memberId: member.id })
-  );
-  return upsertLeads(supabase, leads, { mode: "skip" });
 }

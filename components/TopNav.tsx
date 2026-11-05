@@ -42,8 +42,7 @@ export default function TopNav({
   // read-only directory with booking links.
   const tabs = [
     { label: "Dashboard", href: "/dashboard" },
-    { label: "Leads", href: "/leads" },
-    { label: "Lead Finder", href: "/lead-finder" },
+    { label: "Sales", href: "/sales" },
     { label: "Projects", href: PROJECTS_HREF },
     ...(isAdmin ? [{ label: "Transactions", href: "/transactions" }] : []),
     { label: "Contacts", href: "/contacts" },

@@ -7,7 +7,8 @@ import { BRANCHES, type Branch } from "@/lib/theme";
 import { defaultOwnerFor, projectSourceFor } from "@/lib/leads/convert";
 import { LEAD_LIST_COLUMNS, type LeadListRow } from "@/lib/leads/list";
 
-// Move to Interested: turns a lead into a project at stage Interested.
+// Move to Interested (Sales detail panel): turns a business (leads row)
+// into a project at stage Interested.
 //   project: client_name, contact_name, email, phone, source (mapped to the
 //   projects list), branch, owner (default: whoever leads that branch),
 //   salesperson = the lead's found_by, estimated value (build or monthly),
@@ -100,7 +101,7 @@ export default function ConvertDialog({
     if (e2 || !rows?.length) {
       setBusy(false);
       setError({
-        text: `The project was created, but the lead couldn't be marked converted (${e2?.message ?? "only its owner or an Admin/Manager can"}).`,
+        text: `The project was created, but this business couldn't be marked as moved (${e2?.message ?? "only its owner or an Admin/Manager can"}).`,
         projectId: project.id,
       });
       return;
@@ -124,7 +125,7 @@ export default function ConvertDialog({
       <form onSubmit={submit} className="w-full max-w-md rounded-lg bg-white p-5 shadow-xl">
         <h2 className="text-lg font-semibold text-foreground">Move to Interested</h2>
         <p className="mt-1 text-xs text-neutral-500">
-          Creates a project for <b>{lead.company ?? lead.name}</b> at stage Interested and marks the lead converted.
+          Creates a project for <b>{lead.company ?? lead.name}</b> at stage Interested.
         </p>
 
         <div className="mt-4 grid grid-cols-2 gap-3">

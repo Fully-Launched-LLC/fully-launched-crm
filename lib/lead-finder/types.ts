@@ -1,3 +1,5 @@
+import type { LatestTouch } from "@/lib/sales/outcomes";
+
 // Shapes shared by the Lead Finder server code (lib/lead-finder/*, the
 // app/api/lead-finder routes) and the client page.
 
@@ -109,14 +111,17 @@ export type LeadFinderRun = {
   finished_at: string | null;
 };
 
-// What the results table shows next to a result that's already a lead.
+// A result that already has a Sales record (leads row whose source is in
+// SALES_SOURCES, lib/sales/outcomes.ts): who owns it, its latest outcome.
 export type ExistingLead = {
   id: string;
   company: string | null;
   status: string;
   owner: string | null;
-  last_touch_at: string | null;
-  last_touch_channel: string | null;
+  project_id: string | null;
+  next_action: string | null;
+  next_action_at: string | null;
+  last_touch: LatestTouch | null;
   matched_on: "google_place_id" | "cid" | "email" | "domain" | "phone";
 };
 
