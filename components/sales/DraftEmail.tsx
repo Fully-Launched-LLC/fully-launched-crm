@@ -14,18 +14,21 @@ export default function DraftEmail({
   ctx,
   to: initialTo,
   inline = false,
+  defaultKind,
   onClose,
   onMarkSent,
 }: {
   ctx: EmailContext;
   // Audit dossier: shown in the page (no overlay, no close), stays after Mark as sent.
   inline?: boolean;
+  // Search focus default; else the business's top gap.
+  defaultKind?: EmailKind;
   to: string | null;
   onClose: () => void;
   onMarkSent: (subject: string, to: string) => Promise<string | null>;
 }) {
   const toast = useOutcomeToast();
-  const [kind, setKind] = useState<EmailKind>(() => defaultEmailKind(ctx.place));
+  const [kind, setKind] = useState<EmailKind>(() => defaultKind ?? defaultEmailKind(ctx.place));
   const initial = buildEmail(kind, ctx);
   const [to, setTo] = useState(initialTo ?? "");
   const [subject, setSubject] = useState(initial.subject);

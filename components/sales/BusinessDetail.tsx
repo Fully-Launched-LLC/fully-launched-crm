@@ -35,6 +35,8 @@ import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import ConvertDialog from "@/components/sales/ConvertDialog";
 import BookCall from "@/components/sales/BookCall";
 import RunsOn from "@/components/sales/RunsOn";
+import FindOwner from "@/components/sales/FindOwner";
+import { modeEmailKind, type SearchMode } from "@/lib/sales/searchModes";
 import { runsOn } from "@/lib/lead-finder/software";
 
 // The side preview for one business, used by Find (search results) and
@@ -70,6 +72,7 @@ export default function BusinessDetail({
   onRestored,
   onWebScore,
   dossier = false,
+  mode = "all",
 }: {
   r: RunResult;
   me: TeamMember | null;
@@ -82,6 +85,9 @@ export default function BusinessDetail({
   // Audit page dossier: its own header (with Book a call) replaces the
   // preview's header, actions and Book a call, and it runs PageSpeed itself.
   dossier?: boolean;
+  // The search's branch focus: the default email draft branch and the
+  // dossier's default tabs.
+  mode?: SearchMode;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const toast = useOutcomeToast();
@@ -101,7 +107,12 @@ export default function BusinessDetail({
   // saved to it, and a saved audit reopens without a Google call.
   const audit =
     "/lead-finder/audit?" +
-    new URLSearchParams({ place: l.id, type: r.search_type || l.category || "", ...(ex ? { lead: ex.id } : {}) }).toString();
+    new URLSearchParams({
+      place: l.id,
+      type: r.search_type || l.category || "",
+      ...(ex ? { lead: ex.id } : {}),
+      ...(mode !== "all" ? { mode } : {}),
+    }).toString();
   const canEdit = !!ex && canEditLead(ex, me);
   const software = runsOn(l.tech);
   const ws = websiteScore(l);
@@ -572,6 +583,7 @@ export default function BusinessDetail({
           {!ex?.contact_linkedin && !companyLi && (
             <span className="hint">Found them? Paste the links in Edit contact.</span>
           )}
+          <FindOwner place={l} existing={ex} searchType={r.search_type} me={me} sourceDetail={sourceDetail} onSaved={onSaved} />
         </div>
       </div>
 
@@ -740,6 +752,7 @@ export default function BusinessDetail({
 
       {draftOpen && me && (
         <DraftEmail
+          defaultKind={modeEmailKind(mode, placeForScripts)}
           ctx={{ place: placeForScripts, ownerName, gatekeeper, senderName: me.name, bookingLink: me.booking_link }}
           to={email}
           onClose={() => setDraftOpen(false)}

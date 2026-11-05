@@ -29,6 +29,7 @@ type ScanTagsJson = {
   socialLinks?: ScannedPlace["socialLinks"];
   gbp?: ScannedPlace["gbp"] | null;
   contacts?: ScannedPlace["contacts"] | null;
+  serviceBusiness?: boolean | null;
 };
 
 export function placeFromLead(l: SalesLeadRow): ScannedPlace {
@@ -69,6 +70,7 @@ export function placeFromLead(l: SalesLeadRow): ScannedPlace {
     socialLinks: s.socialLinks ?? {},
     gbp: s.gbp ?? undefined,
     contacts: s.contacts ?? undefined,
+    serviceBusiness: s.serviceBusiness ?? undefined,
   };
 }
 

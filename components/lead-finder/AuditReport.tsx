@@ -17,7 +17,8 @@ import { CHECK_GROUPS, websiteChecks, websiteScore } from "@/lib/lead-finder/web
 import { gbpChecks } from "@/lib/lead-finder/gbpScore";
 import { logOutcome, zeroRowsReason } from "@/lib/sales/log";
 import { contactEmail, contactPhone, ownerNameOf } from "@/lib/sales/owner";
-import { defaultEmailKind } from "@/lib/sales/emailTemplates";
+import type { EmailKind } from "@/lib/sales/emailTemplates";
+import { modeEmailKind, type SearchMode } from "@/lib/sales/searchModes";
 import { outcomeByKey, type Outcome } from "@/lib/sales/outcomes";
 import { OutcomeToastProvider, useOutcomeToast } from "@/components/sales/OutcomeToast";
 import { LatestOutcome } from "@/components/sales/OutcomeChips";
@@ -83,9 +84,11 @@ type AuditProps = {
   // The Sales record, if there is one (any touch or edit here creates it).
   initialExisting: ExistingLead | null;
   sourceDetail: string;
+  // The search's branch focus: default tab for email drafts and call script.
+  mode: SearchMode;
 };
 
-function AuditInner({ placeId, type, me, members, saved, initialExisting, sourceDetail }: AuditProps) {
+function AuditInner({ placeId, type, me, members, saved, initialExisting, sourceDetail, mode }: AuditProps) {
   const toast = useOutcomeToast();
   const [existing, setExisting] = useState<ExistingLead | null>(initialExisting);
   const leadId = existing?.id ?? null;
@@ -324,6 +327,7 @@ function AuditInner({ placeId, type, me, members, saved, initialExisting, source
             <div className={`lf-root ${LF_FONT_VARS} dossier no-print`}>
               <DraftEmail
                 inline
+                defaultKind={modeEmailKind(mode, L)}
                 ctx={{ place: L, ownerName: L.ownerName, gatekeeper, senderName: me.name, bookingLink: me.booking_link }}
                 to={contactEmail(scanned!, existing)}
                 onClose={() => {}}
@@ -332,7 +336,7 @@ function AuditInner({ placeId, type, me, members, saved, initialExisting, source
             </div>
 
             {/* f: call script, screen only */}
-            <CallScriptBox L={L} speed={S} recommendations={recommendations} />
+            <CallScriptBox L={L} speed={S} recommendations={recommendations} defaultKind={modeEmailKind(mode, L)} />
 
             {convert &&
               createPortal(
@@ -527,10 +531,12 @@ function CallScriptBox({
   L,
   speed,
   recommendations,
+  defaultKind,
 }: {
   L: ScannedPlace;
   speed: PageSpeed | null;
   recommendations: ReturnType<typeof buildRecommendations>;
+  defaultKind: EmailKind;
 }) {
   const built = buildCallScript(L, speed, recommendations);
   // Five branch tabs, like the email drafts. AI uses the ServiceTitan pitch
@@ -543,8 +549,8 @@ function CallScriptBox({
     ["ecom", "E-commerce"],
     ["general", "General"],
   ];
-  const top = defaultEmailKind(L);
-  const [pick, setPick] = useState<PitchKey>(top === "ai" ? aiKey : top);
+  // Default: the search focus, else the business's top gap.
+  const [pick, setPick] = useState<PitchKey>(defaultKind === "ai" ? aiKey : defaultKind);
   const s = built.scripts[pick];
   const tel = L.phone && L.phone !== "No phone listed" ? L.phone.replace(/[^0-9+]/g, "") : "";
 

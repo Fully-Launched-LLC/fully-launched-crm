@@ -16,6 +16,7 @@ import LocalDateTime from "@/components/LocalDateTime";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import { SaveSearchButton } from "@/components/sales/SavedSearches";
 import RunsOn from "@/components/sales/RunsOn";
+import { ECOM_MODE_NOTE, asMode, modeCompare, modeIncludes, modeLabel } from "@/lib/sales/searchModes";
 import { runsOnText } from "@/lib/lead-finder/software";
 import { LatestOutcome, OutcomeChips, contactState, stopNotice, type ContactState } from "@/components/sales/OutcomeChips";
 
@@ -66,6 +67,8 @@ export default function MissionControl({
   defaultSearchName: () => string;
 }) {
   const isSweep = run.kind === "sweep";
+  // Branch focus saved with the run (lib/sales/searchModes.ts).
+  const mode = asMode((run.params as SearchParams | SweepParams).mode);
   const [tab, setTab] = useState("all");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<Sort>("priority");
@@ -109,11 +112,12 @@ export default function MissionControl({
   const wanted = SERVICE_ORDER.filter((s) => svc[s]);
   const current = useMemo(
     () =>
-      svc.servicetitan
+      (svc.servicetitan
         ? withOverrides.filter((r) => r.place.usesServiceTitan)
-        : withOverrides.filter((r) => r.place.services.some((s) => wanted.includes(s))),
+        : withOverrides.filter((r) => r.place.services.some((s) => wanted.includes(s)))
+      ).filter((r) => modeIncludes(r, mode)),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [withOverrides, svc]
+    [withOverrides, svc, mode]
   );
   const pool = current;
   const STATE_RANK: Record<ContactState, number> = { none: 0, contacted: 1, stopped: 2 };
@@ -134,6 +138,7 @@ export default function MissionControl({
             : sort === "website"
               ? websiteScore(a.place).score - websiteScore(b.place).score
               : STATE_RANK[contactState(a.existing)] - STATE_RANK[contactState(b.existing)] ||
+                modeCompare(a, b, mode) ||
                 b.place.priority - a.place.priority ||
                 b.place.score - a.place.score
     );
@@ -264,7 +269,10 @@ export default function MissionControl({
           <img src={ROCKET_IDLE_SRC} alt="" />
           <div>
             <div className="kicker">{run.status === "cancelled" ? "Mission cancelled" : "Mission landed"}</div>
-            <h2>{run.params.label || "Results"}</h2>
+            <h2>
+              {run.params.label || "Results"}
+              {mode !== "all" && <span className="mode-pill">{modeLabel(mode)} focus</span>}
+            </h2>
             <div className="meta">
               {isSweep ? "Area sweep" : "Quick search"} by {memberName(run.run_by)} · est. {money(Number(run.est_cost ?? 0))}
             </div>
@@ -326,7 +334,7 @@ export default function MissionControl({
                 value={sort}
                 onChange={(v) => setSort(v as Sort)}
                 options={[
-                  { value: "priority", label: "Sort: priority" },
+                  { value: "priority", label: mode === "all" ? "Sort: priority" : `Sort: best for ${modeLabel(mode)}` },
                   { value: "website", label: "Sort: weakest website" },
                   { value: "rating", label: "Sort: rating" },
                   { value: "reviews", label: "Sort: reviews" },
@@ -347,6 +355,12 @@ export default function MissionControl({
               ))}
             </div>
           </div>
+
+          {mode === "ecom" && (
+            <div className="bar-msg">
+              <p className="hint">Showing businesses that already sell online. {ECOM_MODE_NOTE}.</p>
+            </div>
+          )}
 
           {checked.size > 0 && (
             <div className="bulk">
@@ -510,6 +524,7 @@ export default function MissionControl({
             <BusinessDetail
               key={selected.google_place_id}
               r={selected}
+              mode={mode}
               me={me}
               members={members}
               sourceDetail={sourceDetail}

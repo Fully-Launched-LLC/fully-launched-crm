@@ -11,6 +11,7 @@ import SalesHistory from "@/components/sales/SalesHistory";
 import { OutcomeToastProvider } from "@/components/sales/OutcomeToast";
 import { SaveSearchButton, SavedSearchesPanel } from "@/components/sales/SavedSearches";
 import { bodyFromRun, defaultSearchName, type RunBody, type SavedSearch } from "@/lib/sales/savedSearch";
+import { ECOM_MODE_NOTE, SEARCH_MODES, asMode, type SearchMode } from "@/lib/sales/searchModes";
 import LocalDateTime from "@/components/LocalDateTime";
 import { SessionExpiredError, apiFetch, readLastRun, writeLastRun } from "@/lib/lead-finder/apiFetch";
 import { createClient } from "@/lib/supabase/client";
@@ -92,6 +93,9 @@ export default function LeadFinder({
 
   // ---- Form ----
   const [mode, setMode] = useState<Mode>("search");
+  // Branch focus (lib/sales/searchModes.ts): what Mission Control includes
+  // and how it ranks; also the default email / call script branch.
+  const [focus, setFocus] = useState<SearchMode>("all");
   const [state, setState] = useState("");
   const [city, setCity] = useState("");
   const [zip, setZip] = useState("");
@@ -146,10 +150,11 @@ export default function LeadFinder({
     };
     setState("Illinois");
     setZip("");
-    if (kind === "st") { setMode("sweep"); setCity("Wheaton"); setRadius(5); only(["servicetitan"]); }
-    if (kind === "ai") { setMode("sweep"); setCity("Wheaton"); setRadius(5); only(["ai"]); }
-    if (kind === "web") { setMode("search"); setCity("Wheaton"); setType("barbershop"); only(["website", "social"]); }
-    if (kind === "ecom") { setMode("search"); setCity("Naperville"); setType("boutique"); only(["ecom", "social"]); }
+    // Presets map to focus modes (ServiceTitan -> AI).
+    if (kind === "st") { setMode("sweep"); setCity("Wheaton"); setRadius(5); only(["servicetitan"]); setFocus("ai"); }
+    if (kind === "ai") { setMode("sweep"); setCity("Wheaton"); setRadius(5); only(["ai"]); setFocus("ai"); }
+    if (kind === "web") { setMode("search"); setCity("Wheaton"); setType("barbershop"); only(["website", "social"]); setFocus("website"); }
+    if (kind === "ecom") { setMode("search"); setCity("Naperville"); setType("boutique"); only(["ecom", "social"]); setFocus("ecom"); }
     setTimeout(() => launchRef.current?.focus(), 0);
   }
 
@@ -357,6 +362,7 @@ export default function LeadFinder({
     setCity(b.city ?? "");
     setZip(b.zip ?? "");
     setSvc(nextSvc);
+    setFocus(asMode(b.mode));
     setFormError(null);
     setTab("find");
     showView("launch");
@@ -380,8 +386,8 @@ export default function LeadFinder({
   // The search the console describes right now.
   function currentBody(): RunBody {
     return mode === "search"
-      ? { kind: "search", state, city: city.trim(), zip: zip.trim(), type: type.trim(), depth, services: stOnly ? ["servicetitan"] : selectedServices }
-      : { kind: "sweep", state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText };
+      ? { kind: "search", mode: focus, state, city: city.trim(), zip: zip.trim(), type: type.trim(), depth, services: stOnly ? ["servicetitan"] : selectedServices }
+      : { kind: "sweep", mode: focus, state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText };
   }
 
   // ---- My saved searches (migration 025, own rows) ----
@@ -737,6 +743,28 @@ export default function LeadFinder({
                     </button>
                   </div>
                   {!canSweep && <span className="note">Area sweeps are for Admins and Managers.</span>}
+                </div>
+
+                <div className="focus-row">
+                  <span className="lt">Focus</span>
+                  <div className="modes" role="tablist" aria-label="Search focus">
+                    {SEARCH_MODES.map(([k, label]) => (
+                      <button key={k} type="button" role="tab" aria-selected={focus === k} onClick={() => setFocus(k)}>
+                        {label}
+                      </button>
+                    ))}
+                  </div>
+                  <span className="note">
+                    {focus === "website"
+                      ? "No website, a broken one, or a website score under 60. Weakest sites first."
+                      : focus === "social"
+                        ? "No Instagram or TikTok on their site. Fewest social channels first."
+                        : focus === "ai"
+                          ? "Field-service or CRM software first, then busy service businesses."
+                          : focus === "ecom"
+                            ? `Businesses already selling online. ${ECOM_MODE_NOTE}.`
+                            : "Everything, ranked by priority."}
+                  </span>
                 </div>
 
                 <div className="grid loc">

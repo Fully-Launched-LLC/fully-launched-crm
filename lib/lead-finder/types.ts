@@ -59,6 +59,9 @@ export type ScannedPlace = {
   // Profile URLs linked from their website: first per platform, tracking
   // parameters removed. LinkedIn = company page only. Missing before Nov 5.
   socialLinks?: SocialLinks;
+  // Google types / search type / category say it's a service business (HVAC,
+  // plumbing, ...). Missing before Nov 6 (AI mode falls back to the AI tag).
+  serviceBusiness?: boolean;
   gbp?: GbpInfo;
   // Every email and phone found, with where (Nov 6+): homepage, contact
   // page, about page, Facebook page, Google profile. Own-domain emails first.
@@ -123,6 +126,7 @@ export type LatLng = { latitude: number; longitude: number };
 export type Tile = { low: LatLng; high: LatLng };
 
 export type SearchParams = {
+  mode?: "all" | "website" | "social" | "ai" | "ecom"; // lib/sales/searchModes.ts
   state: string;
   city: string;
   zip: string;
@@ -135,6 +139,7 @@ export type SearchParams = {
 };
 
 export type SweepParams = {
+  mode?: "all" | "website" | "social" | "ai" | "ecom";
   state: string;
   city: string;
   zip: string;

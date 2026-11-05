@@ -897,6 +897,7 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     photos: (place.photos || []).length,
     socialLinks: siteInfo ? siteInfo.socialLinks : {},
     gbp: gbpInfo(place),
+    serviceBusiness: looksLikeServiceBusiness(place, searchType),
     contacts: contactsFound.result(siteDomain),
   };
 }

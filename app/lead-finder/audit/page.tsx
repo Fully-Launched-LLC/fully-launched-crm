@@ -7,6 +7,7 @@ import { LEAD_LIST_COLUMNS } from "@/lib/leads/list";
 import { existingFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
 import type { LatestTouch } from "@/lib/sales/outcomes";
 import AuditReport from "@/components/lead-finder/AuditReport";
+import { asMode } from "@/lib/sales/searchModes";
 
 export const metadata: Metadata = { title: "Business dossier" };
 
@@ -14,12 +15,13 @@ export const metadata: Metadata = { title: "Business dossier" };
 // Outside the (app) layout, like /clock, so "Print client report" prints
 // only the client-facing part. Login still required (middleware).
 //   ?place=<google place id>&type=<search type>&lead=<leads.id, optional>
+//   &mode=<search focus, optional: default branch for email drafts + call script>
 // With a record that already has a saved audit, the saved one is shown (no
 // Google call) until "Run again".
 export default async function AuditPage({
   searchParams,
 }: {
-  searchParams: { place?: string; type?: string; lead?: string };
+  searchParams: { place?: string; type?: string; lead?: string; mode?: string };
 }) {
   const me = await getCurrentTeamMember();
   if (!me) {
@@ -63,6 +65,7 @@ export default async function AuditPage({
       saved={saved}
       initialExisting={existing}
       sourceDetail={sourceDetail}
+      mode={asMode(searchParams.mode)}
     />
   );
 }

@@ -13,6 +13,7 @@ import { googleLocate, googleTextSearch, LeadFinderConfigError, type GooglePlace
 import { mapLimit, scanPlace, SCAN_CONCURRENCY } from "@/lib/lead-finder/scanner";
 import { findLeadMatches } from "@/lib/leads/upsert";
 import { SALES_SOURCES, type LatestTouch } from "@/lib/sales/outcomes";
+import { asMode } from "@/lib/sales/searchModes";
 import type {
   ExistingLead,
   LeadFinderRun,
@@ -64,8 +65,8 @@ function canStep(member: TeamMember, run: LeadFinderRun): boolean {
 // Create
 
 export type CreateRunBody =
-  | { kind: "search"; state: string; city?: string; zip?: string; type: string; depth?: number; services?: string[] }
-  | { kind: "sweep"; state: string; city?: string; zip?: string; radius: number; services?: string[]; types?: string };
+  | { kind: "search"; mode?: string; state: string; city?: string; zip?: string; type: string; depth?: number; services?: string[] }
+  | { kind: "sweep"; mode?: string; state: string; city?: string; zip?: string; radius: number; services?: string[]; types?: string };
 
 export async function createRun(supabase: SupabaseClient, member: TeamMember, body: CreateRunBody): Promise<LeadFinderRun> {
   const state = (body.state || "").trim();
@@ -80,6 +81,7 @@ export async function createRun(supabase: SupabaseClient, member: TeamMember, bo
     const depth = Math.min(60, Math.max(20, Number(body.depth) || 20));
     const pages = searchPages(depth);
     const params: SearchParams = {
+      mode: asMode(body.mode),
       state, city, zip, type, depth, services,
       label: `${type} · ${locationPhrase(state, city, zip)}`,
       next_page_token: null,
@@ -105,6 +107,7 @@ export async function createRun(supabase: SupabaseClient, member: TeamMember, bo
     if (!center) throw new HttpError(400, "Could not find that city or zip on the map.");
     const stOnly = services.length === 1 && services[0] === "servicetitan";
     const params: SweepParams = {
+      mode: asMode(body.mode),
       state, city, zip, services,
       radius: plan.radius,
       types: plan.types,

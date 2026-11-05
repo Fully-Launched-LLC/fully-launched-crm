@@ -74,6 +74,7 @@ export function leadFromScan(
       socialLinks: p.socialLinks ?? {},
       gbp: p.gbp ?? null,
       contacts: p.contacts ?? null,
+      serviceBusiness: p.serviceBusiness ?? null,
     },
     lead_score: p.score,
     priority_score: p.priority,
