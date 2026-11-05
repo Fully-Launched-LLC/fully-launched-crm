@@ -50,6 +50,28 @@ export type ScannedPlace = {
   hours: string[] | null;
   cid: string | null;
   priority: number;
+  // Website score inputs (lib/lead-finder/websiteScore.ts). Missing on
+  // results scanned before Nov 5; site is null when the homepage didn't load.
+  site?: SiteChecks | null;
+  photos?: number; // Google profile photos (Places returns up to 10)
+  // PageSpeed for the full website score, cached 30 days per website.
+  webScore?: WebScoreCache | null;
+};
+
+export type SiteChecks = {
+  https: boolean;
+  mobile: boolean;
+  title: boolean;
+  metaDescription: boolean;
+  h1: boolean;
+  localSchema: boolean; // LocalBusiness / Organization (or a subtype) JSON-LD
+  faqSchema: boolean;
+};
+
+export type WebScoreCache = {
+  url: string;
+  at: string; // ISO time PageSpeed ran
+  speed: { performance: number | null; seo: number | null; accessibility: number | null; bestPractices: number | null };
 };
 
 // PageSpeed Insights result; when `error` is set the scores are absent.
@@ -116,6 +138,8 @@ export type LeadFinderRun = {
 export type ExistingLead = {
   id: string;
   company: string | null;
+  contact_name: string | null; // owner name, editable in Sales
+  title: string | null; // "Owner" once a person set the name, else a scan guess
   status: string;
   owner: string | null;
   project_id: string | null;

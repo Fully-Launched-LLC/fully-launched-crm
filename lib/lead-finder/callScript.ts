@@ -33,7 +33,7 @@ export type CallScript = {
 export function pitchesFor(L: ScannedPlace): PitchKey[] {
   const list: PitchKey[] = [];
   if (L.usesServiceTitan) list.push("servicetitan");
-  if (L.tags.ai.length && !L.usesServiceTitan) list.push("ai");
+  if ((L.tags.ai.length || plugsInto(L)) && !L.usesServiceTitan) list.push("ai");
   if (L.tags.website.length) list.push("website");
   if (L.tags.ecom.length) list.push("ecom");
   if (L.tags.social.length) list.push("social");
@@ -57,6 +57,14 @@ function ecomHook(L: ScannedPlace): string {
   return "I noticed you’re selling on " + andList(on) + "." +
     (missing.length ? " A lot of shops like yours grow fast by adding " + orList(missing.slice(0, 3)) + "." : "");
 }
+
+// Field-service software we build AI tools on top of (AI pitch).
+const PLUG_INTO = ["ServiceTitan", "Housecall Pro", "Jobber"];
+function plugsInto(L: ScannedPlace): string | null {
+  return PLUG_INTO.find((name) => (L.tech || []).some((t) => t.includes(name))) ?? null;
+}
+const PLUG_PITCH = (sw: string) =>
+  "We build AI tools that plug straight into " + sw + ": automatic follow-ups, quotes and invoices, answering calls and booking jobs, and reporting. It all runs inside the " + sw + " account you already have, so nobody has to learn a new system.";
 
 function firstName(full: string | null): string | null {
   return full ? full.split(" ")[0] : null;
@@ -98,7 +106,7 @@ export function buildCallScript(L: ScannedPlace, speed: PageSpeed | null, recomm
       opener: intro + " save time on office work. I noticed " + biz + " uses ServiceTitan. Is that right?",
       hook: "The reason I ask: we’re building an AI tool for another HVAC company on ServiceTitan that reads their vendor invoices and turns them into purchase orders automatically. Their office was spending about 16 hours a month typing those in by hand.",
       questions: ["How are vendor invoices getting into ServiceTitan today? Is someone typing them in?", "Roughly how many invoices or POs do you handle a month?", "What’s the most repetitive thing your office does every week?", "Who handles that, and what would they do with an extra two days a month?"],
-      pitch: "If any of that sounds familiar, we can probably connect AI directly to your ServiceTitan account so that work happens on its own. Your team just reviews and approves.",
+      pitch: "If any of that sounds familiar, we can probably connect AI directly to your ServiceTitan account so that work happens on its own. Your team just reviews and approves. " + PLUG_PITCH("ServiceTitan"),
       ...common,
     },
     ai: {
@@ -106,7 +114,9 @@ export function buildCallScript(L: ScannedPlace, speed: PageSpeed | null, recomm
       opener: intro + " cut down on phone and paperwork time using AI.",
       hook: biz + " has " + L.reviews + " Google reviews, so you’re clearly busy" + (L.complaints && L.complaints.length ? ", and a couple of reviews mention trouble getting a callback or getting scheduled, which usually means the office is stretched" : "") + (L.hasBooking === false ? ". I also noticed there’s no way to book or request service online" : "") + ".",
       questions: ["What eats the most time in your office each week: phones, scheduling, quotes, invoices?", "What software do you run the business on?" + (L.tech.length ? " ((Site suggests: " + L.tech.join(", ") + "))" : ""), "Do calls ever go to voicemail during busy times?", "If you could hand one task to an assistant tomorrow, what would it be?"],
-      pitch: "We build AI tools that answer common questions, book appointments and handle data entry, plugged into the software you already use, so nobody has to learn a new system.",
+      pitch: plugsInto(L)
+        ? PLUG_PITCH(plugsInto(L)!)
+        : "We build AI tools that answer common questions, book appointments and handle data entry, plugged into the software you already use, so nobody has to learn a new system.",
       ...common,
     },
     website: {
@@ -154,6 +164,6 @@ export function buildCallScript(L: ScannedPlace, speed: PageSpeed | null, recomm
     order: pitchesFor(L),
     voicemail,
     emailBody,
-    askFor: L.ownerName ? L.ownerName + " (possible owner)" : "The owner",
+    askFor: L.ownerName ? L.ownerName + " (owner)" : "The owner",
   };
 }

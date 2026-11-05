@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
-import type { ExistingLead, LeadFinderRun, RunResult, ScannedPlace, SearchParams, ServiceKey, SweepParams } from "@/lib/lead-finder/types";
+import type { ExistingLead, LeadFinderRun, RunResult, ScannedPlace, SearchParams, ServiceKey, SweepParams, WebScoreCache } from "@/lib/lead-finder/types";
+import { PRIORITY_TIP, WEBSITE_SCORE_TIP, fieldSoftware, websiteScore } from "@/lib/lead-finder/websiteScore";
+import { ownerNameOf } from "@/lib/sales/owner";
+import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import { SERVICE_LABELS, SERVICE_ORDER } from "@/lib/lead-finder/sweep";
 import { logOutcome } from "@/lib/sales/log";
 import { classifyTouch, type Outcome } from "@/lib/sales/outcomes";
@@ -14,13 +17,15 @@ import BusinessDetail from "@/components/sales/BusinessDetail";
 import { LatestOutcome, OutcomeChips, isHiddenOutcome } from "@/components/sales/OutcomeChips";
 
 // Matteo's mission control (Sales > Find results): stats, tabs, service
-// filter, bulk bar, table, sticky detail panel. Every row has one-click
-// outcomes; logging one on a business with no record saves it first
-// (lib/sales/log.ts). Businesses already worked show their latest outcome;
-// Not interested / Bad fit are hidden until "Show already contacted".
+// filter, bulk bar, table, sticky side preview. Outcomes are logged in the
+// side preview or the bulk bar (save on first click, toast with Add note /
+// Undo); a business with no record is saved first (lib/sales/log.ts).
+// Businesses already worked show their latest outcome; Not interested is
+// hidden until "Show already contacted". Matteo's score stays in exports
+// ("Need Score"); the UI shows the website score.
 
 export type Svc = Record<ServiceKey | "servicetitan", boolean>;
-type Sort = "priority" | "score" | "rating" | "reviews" | "name";
+type Sort = "priority" | "website" | "rating" | "reviews" | "name";
 
 const GAP_LABELS: Record<ServiceKey, string> = { website: "Website", social: "Social", ecom: "E-commerce", ai: "AI" };
 const STALE_MS = 7 * 24 * 3600 * 1000;
@@ -28,7 +33,7 @@ const STALE_MS = 7 * 24 * 3600 * 1000;
 const noSite = (l: ScannedPlace) => !l.website || l.websiteStatus === "Social page only" || l.websiteStatus === "Broken";
 const hasContact = (l: ScannedPlace) => (l.emails && l.emails.length > 0) || !!l.ownerName;
 const fmtRating = (r: number | "N/A") => (typeof r === "number" ? r.toFixed(1) : r);
-const scoreClass = (s: number) => (s >= 60 ? "s-hi" : s >= 35 ? "s-mid" : "s-lo");
+const wsClass = (s: number) => (s >= 70 ? "s-hi" : s >= 40 ? "s-mid" : "s-lo");
 const money = (n: number) => "$" + n.toFixed(2);
 
 export default function MissionControl({
@@ -59,16 +64,28 @@ export default function MissionControl({
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [showContacted, setShowContacted] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  // Records created or touched here, until the run's results reload.
-  const [overrides, setOverrides] = useState<Record<string, ExistingLead>>({});
+  // Records created, touched or undone here (null: no record), and full
+  // website scores fetched here, until the run's results reload.
+  const [overrides, setOverrides] = useState<Record<string, ExistingLead | null>>({});
+  const [webScores, setWebScores] = useState<Record<string, WebScoreCache>>({});
+  const toast = useOutcomeToast();
   const detailRef = useRef<HTMLElement>(null);
   const sourceDetail = (run.params as SearchParams | SweepParams).label;
 
-  useEffect(() => setOverrides({}), [results]);
+  useEffect(() => {
+    setOverrides({});
+    setWebScores({});
+  }, [results]);
 
   const withOverrides = useMemo(
-    () => results.map((r) => (overrides[r.google_place_id] ? { ...r, existing: overrides[r.google_place_id] } : r)),
-    [results, overrides]
+    () =>
+      results.map((r) => {
+        const k = r.google_place_id;
+        let out = k in overrides ? { ...r, existing: overrides[k] } : r;
+        if (webScores[k]) out = { ...out, place: { ...out.place, webScore: webScores[k] } };
+        return out;
+      }),
+    [results, overrides, webScores]
   );
 
   // His tabs. "Not contacted" = no outcome logged yet.
@@ -76,7 +93,7 @@ export default function MissionControl({
     ["all", "All", () => true],
     ["nosite", "No real website", (r) => noSite(r.place)],
     ["hot", "Hot (60+)", (r) => r.place.score >= 60],
-    ["reach", "Has contact", (r) => hasContact(r.place)],
+    ["reach", "Has contact", (r) => hasContact({ ...r.place, ownerName: ownerNameOf(r.place, r.existing) })],
     ["fresh", "Not contacted", (r) => !r.existing?.last_touch && !r.existing?.project_id],
   ];
 
@@ -106,8 +123,8 @@ export default function MissionControl({
           ? num(b.place.rating) - num(a.place.rating)
           : sort === "reviews"
             ? b.place.reviews - a.place.reviews
-            : sort === "score"
-              ? b.place.score - a.place.score
+            : sort === "website"
+              ? websiteScore(a.place).score - websiteScore(b.place).score
               : b.place.priority - a.place.priority || b.place.score - a.place.score
     );
 
@@ -120,7 +137,7 @@ export default function MissionControl({
   const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown";
 
   // ---- Writes ----
-  function applySaved(saved: { key: string; existing: ExistingLead }[]) {
+  function applySaved(saved: { key: string; existing: ExistingLead | null }[]) {
     setOverrides((prev) => {
       const next = { ...prev };
       saved.forEach((s) => (next[s.key] = s.existing));
@@ -128,7 +145,8 @@ export default function MissionControl({
     });
   }
 
-  async function log(rows: RunResult[], o: Outcome, note: string): Promise<string | null> {
+  // Bulk bar: one outcome on every selected row, saved on the click.
+  async function log(rows: RunResult[], o: Outcome): Promise<string | null> {
     if (!me) return "You need a team member profile to log outcomes.";
     setMessage(null);
     let res;
@@ -138,19 +156,24 @@ export default function MissionControl({
         me.id,
         rows.map((r) => ({ key: r.google_place_id, place: r.place, searchType: r.search_type, existing: r.existing })),
         o,
-        note,
         sourceDetail
       );
     } catch (e) {
       return (e as Error).message || "Could not save.";
     }
     applySaved(res.saved);
-    if (rows.length === 1) return res.failed[0]?.reason ?? null;
-    if (res.failed.length) {
-      setMessage({ tone: "error", text: `Logged ${o.label} on ${res.saved.length}. ${res.failed.length} not saved: ${res.failed[0].reason}` });
-    } else {
-      setMessage({ tone: "ok", text: `Logged ${o.label} on ${res.saved.length}.` });
-      setChecked(new Set());
+    if (res.failed.length)
+      setMessage({ tone: "error", text: `${res.failed.length} not saved: ${res.failed[0].reason}` });
+    else setChecked(new Set());
+    if (res.saved.length) {
+      const saved = res.saved;
+      toast.show({
+        text: `${o.label} saved for ${saved.length} ${saved.length === 1 ? "business" : "businesses"}.`,
+        saved,
+        onUndone: (restored) => applySaved(restored),
+        onNote: (note) =>
+          applySaved(saved.map((s) => ({ key: s.key, existing: { ...s.existing, last_touch: s.existing.last_touch && { ...s.existing.last_touch, summary: note } } }))),
+      });
     }
     return null;
   }
@@ -159,17 +182,17 @@ export default function MissionControl({
   function exportCSV(onlyChecked: boolean) {
     const list = onlyChecked ? checkedRows : visible;
     if (!list.length) return;
-    const headers = ["Priority", "Score", "Business Name", "Category", "Address", "Phone", "Google Rating", "Reviews", "Website", "Website Status",
-      "Possible Owner", "Emails", "Contact Page", "Social Links Found", "Online Store Found", "Marketplaces", "Software Used", "Uses ServiceTitan", "Runs Ads",
+    const headers = ["Priority", "Website Score", "Need Score", "Business Name", "Category", "Address", "Phone", "Google Rating", "Reviews", "Website", "Website Status",
+      "Owner", "Emails", "Contact Page", "Social Links Found", "Online Store Found", "Marketplaces", "Software Used", "Runs On", "Runs Ads",
       "Other Signals", "Services Needed", "Website Reasons", "Social Reasons", "E-commerce Reasons", "AI Reasons",
       "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Google Maps Link"];
     const rows = list.map((r) => {
       const l = r.place;
       const t = r.existing?.last_touch ?? null;
       const outcome = r.existing?.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
-      return [l.priority, l.score, l.name, l.category, l.address, l.phone, l.rating, l.reviews, l.website, l.websiteStatus,
-        l.ownerName || "", (l.emails || []).join("; "), l.contactPage || "", (l.socials || []).join("; "), l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
-        l.usesServiceTitan ? "Yes" : "", (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
+      return [l.priority, websiteScore(l).score, l.score, l.name, l.category, l.address, l.phone, l.rating, l.reviews, l.website, l.websiteStatus,
+        ownerNameOf(l, r.existing) || "", (l.emails || []).join("; "), l.contactPage || "", (l.socials || []).join("; "), l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
+        fieldSoftware(l.tech).join("; ") || (l.usesServiceTitan ? "ServiceTitan" : ""), (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
         l.tags.website.join("; "), l.tags.social.join("; "), l.tags.ecom.join("; "), l.tags.ai.join("; "),
         outcome, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "", l.mapsUrl];
     });
@@ -283,7 +306,7 @@ export default function MissionControl({
                 onChange={(v) => setSort(v as Sort)}
                 options={[
                   { value: "priority", label: "Sort: priority" },
-                  { value: "score", label: "Sort: score" },
+                  { value: "website", label: "Sort: weakest website" },
                   { value: "rating", label: "Sort: rating" },
                   { value: "reviews", label: "Sort: reviews" },
                   { value: "name", label: "Sort: name" },
@@ -312,7 +335,7 @@ export default function MissionControl({
             <div className="bulk">
               <b>{checked.size} selected</b>
               <div className="bulk-out">
-                <OutcomeChips disabled={!me} onSave={(o, note) => log(checkedRows, o, note)} />
+                <OutcomeChips disabled={!me} onSave={(o) => log(checkedRows, o)} />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <button type="button" className="btn" onClick={() => exportCSV(true)}>
@@ -352,12 +375,11 @@ export default function MissionControl({
                       }
                     />
                   </th>
-                  <th title="Who to call first: established businesses missing one or two of our branches">Priority</th>
-                  <th title="Matteo's score: how many gaps, and how big">Score</th>
+                  <th title={PRIORITY_TIP}>Priority</th>
+                  <th title={WEBSITE_SCORE_TIP}>Website score</th>
                   <th>Business</th>
                   <th>Rating</th>
                   <th>Gaps we can fill</th>
-                  <th>Log outcome</th>
                 </tr>
               </thead>
               <tbody>
@@ -367,6 +389,7 @@ export default function MissionControl({
                     const city = (l.address || "").split(",").slice(-3, -1).join(",").trim();
                     const isSel = selected?.google_place_id === r.google_place_id;
                     const touched = !!(r.existing?.last_touch || r.existing?.project_id);
+                    const ws = websiteScore(l);
                     return (
                       <tr
                         key={r.google_place_id}
@@ -382,25 +405,28 @@ export default function MissionControl({
                             aria-label={`Select ${l.name}`}
                           />
                         </td>
-                        <td>
+                        <td title={PRIORITY_TIP}>
                           <div className="prio">{l.priority}</div>
-                        </td>
-                        <td>
-                          <div className={`score ${scoreClass(l.score)}`}>{l.score}</div>
                           <div className="strip" aria-hidden="true">
                             {SERVICE_ORDER.map((s) => (
                               <span key={s} className={l.services.includes(s) ? s : ""} />
                             ))}
                           </div>
                         </td>
+                        <td title={WEBSITE_SCORE_TIP}>
+                          <div className={`score ${wsClass(ws.score)}`}>{ws.score}</div>
+                          <div className="ws-kind">{ws.kind}</div>
+                        </td>
                         <td>
                           <button type="button" className="name" onClick={(e) => { e.stopPropagation(); open(r.google_place_id); }}>
                             {l.name}
                           </button>
-                          {l.usesServiceTitan && <span className="badge-st">ServiceTitan</span>}
-                          {(l.marketplaces ?? []).map((m) => (
-                            <span key={m} className="badge-mkt">{m}</span>
+                          {fieldSoftware(l.tech).map((s) => (
+                            <span key={s} className="badge-st">Runs on: {s}</span>
                           ))}
+                          {(l.marketplaces ?? []).length > 0 && (
+                            <span className="badge-mkt">Sells on: {(l.marketplaces ?? []).join(", ")}</span>
+                          )}
                           <div className="meta">
                             {[l.category, city].filter(Boolean).join(" · ")} ·{" "}
                             {!l.website ? (
@@ -430,15 +456,12 @@ export default function MissionControl({
                             ))}
                           </div>
                         </td>
-                        <td className="oc-cell">
-                          <OutcomeChips disabled={!me} onSave={(o, note) => log([r], o, note)} />
-                        </td>
                       </tr>
                     );
                   })
                 ) : (
                   <tr>
-                    <td colSpan={7}>
+                    <td colSpan={6}>
                       <div className="empty-list">
                         {current.length
                           ? hiddenCount && !showContacted
@@ -470,6 +493,8 @@ export default function MissionControl({
               members={members}
               sourceDetail={sourceDetail}
               onSaved={(ex) => applySaved([{ key: selected.google_place_id, existing: ex }])}
+              onRestored={(ex) => applySaved([{ key: selected.google_place_id, existing: ex }])}
+              onWebScore={(w) => setWebScores((prev) => ({ ...prev, [selected.google_place_id]: w }))}
             />
           ) : (
             <>

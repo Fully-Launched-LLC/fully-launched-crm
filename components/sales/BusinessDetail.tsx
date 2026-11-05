@@ -4,24 +4,39 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { Lead, TeamMember } from "@/lib/types";
-import type { ExistingLead, RunResult } from "@/lib/lead-finder/types";
+import type { ExistingLead, RunResult, WebScoreCache } from "@/lib/lead-finder/types";
 import { SERVICE_LABELS, SERVICE_ORDER } from "@/lib/lead-finder/sweep";
 import { previewQuery } from "@/lib/lead-finder/previewQuery";
+import { apiFetch } from "@/lib/lead-finder/apiFetch";
+import {
+  PRIORITY_TIP,
+  WEBSITE_SCORE_TIP,
+  fieldSoftware,
+  freshWebScore,
+  hasRealSite,
+  websiteScore,
+} from "@/lib/lead-finder/websiteScore";
 import { canEditLead } from "@/lib/leads/list";
-import { logOutcome } from "@/lib/sales/log";
-import { OUTCOME_CLASS, classifyTouch, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
+import { logOutcome, saveOwnerName } from "@/lib/sales/log";
+import { ownerNameOf } from "@/lib/sales/owner";
+import { OUTCOME_CLASS, classifyTouch, outcomeByKey, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
 import { OutcomeChips, LatestOutcome } from "@/components/sales/OutcomeChips";
+import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import ConvertDialog from "@/components/sales/ConvertDialog";
+import BookCall from "@/components/sales/BookCall";
 import LocalDateTime from "@/components/LocalDateTime";
 
-// The detail panel for one business, used by Find (search results) and
-// History: actions (call, maps, site, Preview site, audit), outcome buttons,
-// latest outcome, next action, Move to Interested, the full touch timeline,
-// and the scan findings.
+// The side preview for one business, used by Find (search results) and
+// History: actions (call, maps, site, Preview site, audit), outcome buttons
+// (save on first click, toast with Add note / Undo), latest outcome, owner
+// name (editable), next action, Move to Interested, the full touch timeline,
+// and the scan findings. Opening it runs PageSpeed in the background for the
+// full website score (cached 30 days per website).
 
 const RLS_HINT = "Only the business's owner or an Admin/Manager can change it.";
 
-const scoreClass = (s: number) => (s >= 60 ? "s-hi" : s >= 35 ? "s-mid" : "s-lo");
+// One background PageSpeed run per website per page load.
+const scoreRuns = new Map<string, Promise<WebScoreCache | null>>();
 
 function toLocalInput(iso: string | null): string {
   if (!iso) return "";
@@ -38,25 +53,70 @@ export default function BusinessDetail({
   members,
   sourceDetail,
   onSaved,
+  onRestored,
+  onWebScore,
 }: {
   r: RunResult;
   me: TeamMember | null;
   members: TeamMember[];
   sourceDetail: string;
   onSaved: (existing: ExistingLead) => void;
+  // After Undo: the record's state again (null: it no longer exists).
+  onRestored: (existing: ExistingLead | null) => void;
+  onWebScore: (w: WebScoreCache) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const toast = useOutcomeToast();
   const l = r.place;
   const ex = r.existing;
   const memberName = useCallback((id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown", [members]);
+  const ownerName = ownerNameOf(l, ex);
+  const placeForScripts = { ...l, ownerName };
   const tel = l.phone && l.phone !== "No phone listed" ? l.phone.replace(/[^0-9+]/g, "") : "";
-  const preview = "/api/lead-finder/preview?" + previewQuery({ ...l, type: r.search_type || l.category });
+  const preview = "/api/lead-finder/preview?" + previewQuery({ ...placeForScripts, type: r.search_type || l.category });
   // His audit page (app/lead-finder/audit). With a record id the result is
   // saved to it, and a saved audit reopens without a Google call.
   const audit =
     "/lead-finder/audit?" +
     new URLSearchParams({ place: l.id, type: r.search_type || l.category || "", ...(ex ? { lead: ex.id } : {}) }).toString();
   const canEdit = !!ex && canEditLead(ex, me);
+  const software = fieldSoftware(l.tech);
+  const ws = websiteScore(l);
+
+  // ---- Full website score (background PageSpeed) ----
+  const [scoreState, setScoreState] = useState<"idle" | "running" | "failed">("idle");
+  useEffect(() => {
+    if (!hasRealSite(l) || freshWebScore(l)) return;
+    const url = l.website;
+    let live = true;
+    setScoreState("running");
+    let run = scoreRuns.get(url);
+    if (!run) {
+      run = apiFetch("/api/lead-finder/website-score", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ placeId: l.id, website: url }),
+      })
+        .then((res) => res.json())
+        .then((j) => (j.webScore as WebScoreCache) ?? null)
+        .catch(() => null);
+      scoreRuns.set(url, run);
+    }
+    void run.then((w) => {
+      if (!live) return;
+      if (w) {
+        setScoreState("idle");
+        onWebScore(w);
+      } else {
+        scoreRuns.delete(url);
+        setScoreState("failed");
+      }
+    });
+    return () => {
+      live = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [l.id, l.website, l.webScore?.at]);
 
   // ---- Timeline ----
   const [touches, setTouches] = useState<Touch[]>([]);
@@ -76,7 +136,25 @@ export default function BusinessDetail({
     return () => {
       live = false;
     };
-  }, [ex?.id, reload, supabase]);
+  }, [ex?.id, ex?.last_touch?.touched_at, ex?.last_touch?.summary, reload, supabase]);
+
+  // ---- Owner name ----
+  const [ownerEdit, setOwnerEdit] = useState<string | null>(null);
+  const [ownerMsg, setOwnerMsg] = useState<string | null>(null);
+  async function saveOwner() {
+    if (!me || ownerEdit == null) return;
+    setOwnerMsg(null);
+    const res = await saveOwnerName(
+      supabase,
+      me.id,
+      { key: l.id, place: l, searchType: r.search_type, existing: ex },
+      ownerEdit,
+      sourceDetail
+    );
+    if (res.existing) onSaved(res.existing);
+    if (res.error) return setOwnerMsg(res.error);
+    setOwnerEdit(null);
+  }
 
   // ---- Next action ----
   const [nextText, setNextText] = useState(ex?.next_action ?? "");
@@ -99,34 +177,51 @@ export default function BusinessDetail({
   }
 
   // ---- Move to Interested ----
-  const [convert, setConvert] = useState<{ lead: Lead; firstTouch: { channel: string; direction: string } | null } | null>(null);
+  const [convert, setConvert] = useState<{
+    lead: Lead;
+    firstTouch: { channel: string; direction: string } | null;
+    callBooked: boolean;
+  } | null>(null);
   const [convertError, setConvertError] = useState<string | null>(null);
 
-  async function openConvert(leadId: string) {
+  async function openConvert(leadId: string, callBooked = false) {
     setConvertError(null);
     const [{ data: lead, error }, { data: first }] = await Promise.all([
       supabase.from("leads").select("*").eq("id", leadId).single(),
       supabase.from("lead_touches").select("channel, direction").eq("lead_id", leadId).order("touched_at").limit(1),
     ]);
     if (error || !lead) return setConvertError(error?.message ?? "Could not load this business.");
-    setConvert({ lead: lead as Lead, firstTouch: first?.[0] ?? null });
+    setConvert({ lead: lead as Lead, firstTouch: first?.[0] ?? null, callBooked });
   }
 
-  // ---- Outcomes ----
-  async function save(o: Outcome, note: string): Promise<string | null> {
+  // ---- Outcomes: saved on the first click ----
+  async function save(o: Outcome): Promise<string | null> {
     if (!me) return "You need a team member profile to log outcomes.";
     let res;
     try {
-      res = await logOutcome(supabase, me.id, [{ key: l.id, place: l, searchType: r.search_type, existing: ex }], o, note, sourceDetail);
+      res = await logOutcome(supabase, me.id, [{ key: l.id, place: l, searchType: r.search_type, existing: ex }], o, sourceDetail);
     } catch (e) {
       return (e as Error).message || "Could not save.";
     }
     if (res.failed.length) return res.failed[0].reason;
-    const saved = res.saved[0].existing;
-    onSaved(saved);
+    const saved = res.saved[0];
+    onSaved(saved.existing);
     setReload((n) => n + 1);
-    // Interested: offer Move to Interested right away (as the Leads drawer did).
-    if (o.key === "interested" && !saved.project_id && canEditLead(saved, me)) void openConvert(saved.id);
+    toast.show({
+      text: `${o.label} saved for ${l.name}.`,
+      saved: res.saved,
+      onUndone: (restored) => {
+        onRestored(restored[0]?.existing ?? null);
+        setReload((n) => n + 1);
+      },
+      onNote: (note) => {
+        onSaved({ ...saved.existing, last_touch: saved.existing.last_touch && { ...saved.existing.last_touch, summary: note } });
+        setReload((n) => n + 1);
+      },
+    });
+    // Interested / Booked call: Move to Interested right away (when allowed).
+    if (o.opensMove && !saved.existing.project_id && canEditLead(saved.existing, me))
+      void openConvert(saved.existing.id, o.key === "booked_call");
     return null;
   }
 
@@ -137,24 +232,29 @@ export default function BusinessDetail({
           <div className="kicker">Business</div>
           <h3>{l.name}</h3>
           <div className="meta">{[l.category, l.address].filter(Boolean).join(" · ")}</div>
-          {(l.usesServiceTitan || (l.marketplaces ?? []).length > 0) && (
+          {(software.length > 0 || (l.marketplaces ?? []).length > 0) && (
             <div style={{ marginTop: 6 }}>
-              {l.marketplaces?.length ? <span className="hint">Sells on </span> : null}
+              {software.map((s) => (
+                <span key={s} className="badge-st">Runs on: {s}</span>
+              ))}
+              {l.marketplaces?.length ? <span className="hint" style={{ marginLeft: software.length ? 6 : 0 }}>Sells on </span> : null}
               {(l.marketplaces ?? []).map((m) => (
                 <span key={m} className="badge-mkt">{m}</span>
               ))}
-              {l.usesServiceTitan && <span className="badge-st">ServiceTitan</span>}
             </div>
           )}
         </div>
         <div className="d-score">
-          <div>
+          <div title={PRIORITY_TIP}>
             <b style={{ color: "var(--bright)" }}>{l.priority}</b>
             <small>priority</small>
           </div>
-          <div>
-            <b className={scoreClass(l.score)}>{l.score}</b>
-            <small>score</small>
+          <div title={WEBSITE_SCORE_TIP}>
+            <b className="ws">{ws.score}</b>
+            <small>
+              website · {ws.kind}
+              {scoreState === "running" && <span className="ws-run"> · checking</span>}
+            </small>
           </div>
         </div>
       </div>
@@ -186,7 +286,7 @@ export default function BusinessDetail({
           ) : (
             <p className="hint">No one has contacted this business yet.</p>
           )}
-          {ex && <p className="hint" style={{ marginTop: 4 }}>Owner: {ex.owner ? memberName(ex.owner) : "Unassigned"}</p>}
+          {ex && <p className="hint" style={{ marginTop: 4 }}>Assigned to: {ex.owner ? memberName(ex.owner) : "nobody"}</p>}
         </div>
       </div>
 
@@ -251,7 +351,7 @@ export default function BusinessDetail({
               const c = classifyTouch(t);
               return (
                 <li key={t.id}>
-                  <span className={`st ${OUTCOME_CLASS[c.key ?? "other"]}`}>{c.label}</span>{" "}
+                  <span className={`st ${OUTCOME_CLASS[c.key]}`}>{c.label}</span>{" "}
                   <span className="hint">
                     {memberName(t.touched_by)} · <LocalDateTime iso={t.touched_at} />
                   </span>
@@ -266,19 +366,44 @@ export default function BusinessDetail({
       <div>
         <div className="sec-title">Contact</div>
         <div className="contact-list">
-          {l.ownerName && (
+          {ownerEdit == null ? (
             <div>
-              <b>{l.ownerName}</b> <span className="hint">possible owner</span>
+              Owner: {ownerName ? <b>{ownerName}</b> : <span className="meta">unknown</span>}{" "}
+              <button type="button" className="linkbtn" disabled={!me} onClick={() => { setOwnerEdit(ownerName ?? ""); setOwnerMsg(null); }}>
+                {ownerName ? "Edit" : "Add"}
+              </button>
+            </div>
+          ) : (
+            <div className="owner-form">
+              <input
+                className="field"
+                autoFocus
+                aria-label="Owner name"
+                placeholder="First and last name"
+                value={ownerEdit}
+                onChange={(e) => setOwnerEdit(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveOwner();
+                  if (e.key === "Escape") setOwnerEdit(null);
+                }}
+              />
+              <button type="button" className="btn btn-gold" onClick={() => void saveOwner()}>Save</button>
+              <button type="button" className="btn" onClick={() => setOwnerEdit(null)}>Cancel</button>
             </div>
           )}
+          {ownerMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{ownerMsg}</span>}
           {tel && <a href={`tel:${tel}`}>{l.phone}</a>}
-          {l.emails.map((m) => (
-            <a key={m} href={`mailto:${m}`}>{m}</a>
-          ))}
-          {l.contactPage && (
+          {l.emails.length > 0 ? (
+            l.emails.map((m) => (
+              <a key={m} href={`mailto:${m}`}>{m}</a>
+            ))
+          ) : l.contactPage ? (
             <a href={l.contactPage} target="_blank" rel="noopener noreferrer">Contact page</a>
+          ) : l.website ? (
+            <a href={l.website} target="_blank" rel="noopener noreferrer">Website</a>
+          ) : (
+            <span className="meta">No email or website found</span>
           )}
-          {!l.ownerName && !tel && !l.emails.length && !l.contactPage && <span className="meta">No contact found</span>}
         </div>
       </div>
 
@@ -325,6 +450,13 @@ export default function BusinessDetail({
         </div>
       )}
 
+      <BookCall
+        members={members}
+        name={ownerName}
+        email={l.emails[0] ?? null}
+        onBooked={() => void save(outcomeByKey("booked_call"))}
+      />
+
       {convert &&
         me &&
         createPortal(
@@ -333,6 +465,7 @@ export default function BusinessDetail({
             firstTouch={convert.firstTouch}
             members={members}
             me={me}
+            callBooked={convert.callBooked}
             onClose={() => setConvert(null)}
             onConverted={(projectId) => {
               setConvert(null);

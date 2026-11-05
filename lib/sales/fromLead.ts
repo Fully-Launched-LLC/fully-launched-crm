@@ -23,6 +23,9 @@ type ScanTagsJson = {
   marketplaces?: string[];
   complaints?: string[];
   hours?: string[] | null;
+  site?: ScannedPlace["site"];
+  photos?: number;
+  webScore?: ScannedPlace["webScore"];
 };
 
 export function placeFromLead(l: SalesLeadRow): ScannedPlace {
@@ -57,6 +60,9 @@ export function placeFromLead(l: SalesLeadRow): ScannedPlace {
     hours: s.hours ?? null,
     cid: l.external_ids?.cid ?? null,
     priority: l.priority_score ?? 0,
+    site: s.site,
+    photos: s.photos,
+    webScore: s.webScore ?? null,
   };
 }
 
@@ -64,6 +70,8 @@ export function existingFromLead(l: SalesLeadRow, latest: LatestTouch | null): E
   return {
     id: l.id,
     company: l.company,
+    contact_name: l.contact_name,
+    title: l.title,
     status: l.status,
     owner: l.owner,
     project_id: l.project_id,

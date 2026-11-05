@@ -17,6 +17,8 @@
 .lfa .toolbar button:disabled{opacity:.5;cursor:not-allowed;}
 .lfa .toolbar .saved{margin-right:auto;font-size:13px;color:var(--muted);}
 .lfa .toolbar .saved.bad{color:var(--bad);}
+.lfa .toolbar .owner-line{display:inline-flex;align-items:center;gap:8px;font-size:14px;color:var(--navy);margin-right:auto;}
+.lfa .toolbar .owner-line input{padding:8px 10px;border:1px solid var(--border);border-radius:8px;font:inherit;font-size:14px;}
 .lfa header{background:var(--navy);color:#fff;border-radius:16px;padding:32px 36px;}
 .lfa header .kicker{font-size:12px;letter-spacing:0.14em;text-transform:uppercase;color:var(--tan);font-weight:700;}
 .lfa header h1{font-size:30px;line-height:1.2;margin:8px 0 6px;letter-spacing:-0.5px;}

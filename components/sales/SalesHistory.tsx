@@ -3,11 +3,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
-import type { ExistingLead } from "@/lib/lead-finder/types";
+import type { ExistingLead, WebScoreCache } from "@/lib/lead-finder/types";
+import { PRIORITY_TIP, WEBSITE_SCORE_TIP, websiteScore } from "@/lib/lead-finder/websiteScore";
+import { ownerNameOf } from "@/lib/sales/owner";
 import { BRANCHES, type Branch } from "@/lib/theme";
 import { LEAD_LIST_COLUMNS } from "@/lib/leads/list";
-import { resultFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
-import { BRANCH_TAG, OUTCOMES, SALES_SOURCES, classifyTouch, type LatestTouch, type OutcomeKey } from "@/lib/sales/outcomes";
+import { placeFromLead, resultFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
+import { BRANCH_TAG, OUTCOMES, SALES_SOURCES, classifyTouch, type DisplayKey, type LatestTouch } from "@/lib/sales/outcomes";
 import Dropdown from "@/components/lead-finder/Dropdown";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import { LatestOutcome } from "@/components/sales/OutcomeChips";
@@ -27,10 +29,10 @@ function personOf(r: Row) {
 function whenOf(r: Row) {
   return r.latest?.touched_at ?? r.lead.created_at;
 }
-function outcomeOf(r: Row): OutcomeKey | "moved" | "none" | "other" {
+function outcomeOf(r: Row): DisplayKey | "moved" | "none" {
   if (r.lead.project_id) return "moved";
   if (!r.latest) return "none";
-  return classifyTouch(r.latest).key ?? "other";
+  return classifyTouch(r.latest).key;
 }
 // YYYY-MM-DD of an ISO time in the viewer's timezone (date inputs are local).
 function localDay(iso: string) {
@@ -140,29 +142,46 @@ export default function SalesHistory({
     if (window.innerWidth < 960) detailRef.current?.scrollIntoView({ behavior: "smooth" });
   }
 
-  // A change from the detail panel (outcome, next action, moved).
-  function applySaved(ex: ExistingLead) {
+  // A change from the side preview (outcome, note, owner name, next action,
+  // moved, undo). null: the record was deleted by Undo.
+  function applySaved(id: string, ex: ExistingLead | null) {
     setRows((prev) =>
-      (prev ?? []).map((r) =>
-        r.lead.id === ex.id
-          ? {
-              lead: { ...r.lead, status: ex.status as SalesLeadRow["status"], project_id: ex.project_id, next_action: ex.next_action, next_action_at: ex.next_action_at },
-              latest: ex.last_touch ?? r.latest,
-            }
-          : r
-      )
+      ex === null
+        ? (prev ?? []).filter((r) => r.lead.id !== id)
+        : (prev ?? []).map((r) =>
+            r.lead.id === ex.id
+              ? {
+                  lead: {
+                    ...r.lead,
+                    status: ex.status as SalesLeadRow["status"],
+                    project_id: ex.project_id,
+                    next_action: ex.next_action,
+                    next_action_at: ex.next_action_at,
+                    contact_name: ex.contact_name,
+                    title: ex.title,
+                  },
+                  latest: ex.last_touch,
+                }
+              : r
+          )
+    );
+  }
+  function applyWebScore(id: string, w: WebScoreCache) {
+    setRows((prev) =>
+      (prev ?? []).map((r) => (r.lead.id === id ? { ...r, lead: { ...r.lead, scan_tags: { ...(r.lead.scan_tags ?? {}), webScore: w } } } : r))
     );
   }
 
   function exportCSV() {
     if (!visible.length) return;
-    const headers = ["Business", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Next Action", "Next Action Date", "Phone", "Website", "Address", "Google Maps Link"];
+    const headers = ["Business", "Owner", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Next Action", "Next Action Date", "Phone", "Website", "Address", "Google Maps Link"];
     const out = visible.map((r) => {
       const l = r.lead;
       const t = r.latest;
       const label = l.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
-      return [l.company ?? l.name, label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
-        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.website ?? "", l.address ?? "", l.maps_url ?? ""];
+      const place = placeFromLead(l);
+      return [l.company ?? l.name, ownerNameOf(place, { ...resultFromLead(l, t).existing! }) ?? "", label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
+        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.website ?? "", l.address ?? "", l.maps_url ?? ""];
     });
     const csv = [headers, ...out].map((r) => r.map((c) => '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"').join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
@@ -206,6 +225,8 @@ export default function SalesHistory({
                 options={[
                   { value: "all", label: "Outcome: all" },
                   ...OUTCOMES.map((o) => ({ value: o.key, label: o.label })),
+                  { value: "talked", label: "Called (talked), older" },
+                  { value: "bad_fit", label: "Bad fit, older" },
                   { value: "moved", label: "Moved to Interested" },
                   { value: "none", label: "No outcome yet" },
                 ]}
@@ -250,14 +271,15 @@ export default function SalesHistory({
                   <th>Business</th>
                   <th>Latest outcome</th>
                   <th>Branches</th>
-                  <th>Priority</th>
+                  <th title={PRIORITY_TIP}>Priority</th>
+                  <th title={WEBSITE_SCORE_TIP}>Website score</th>
                   <th>Next action</th>
                 </tr>
               </thead>
               <tbody>
                 {rows === null ? (
                   <tr>
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <div className="empty-list">Loading…</div>
                     </td>
                   </tr>
@@ -265,6 +287,7 @@ export default function SalesHistory({
                   visible.map((r) => {
                     const l = r.lead;
                     const overdue = l.next_action_at && new Date(l.next_action_at).getTime() < now;
+                    const ws = websiteScore(placeFromLead(l));
                     return (
                       <tr key={l.id} className={`lead${selectedId === l.id ? " sel" : ""}`} onClick={() => open(l.id)}>
                         <td>
@@ -277,7 +300,7 @@ export default function SalesHistory({
                           {r.latest || l.project_id ? (
                             <LatestOutcome
                               existing={{
-                                id: l.id, company: l.company, status: l.status, owner: l.owner, project_id: l.project_id,
+                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, status: l.status, owner: l.owner, project_id: l.project_id,
                                 next_action: l.next_action, next_action_at: l.next_action_at, last_touch: r.latest, matched_on: "google_place_id",
                               }}
                               memberName={memberName}
@@ -293,8 +316,12 @@ export default function SalesHistory({
                             ))}
                           </div>
                         </td>
-                        <td>
+                        <td title={PRIORITY_TIP}>
                           <div className="prio">{l.priority_score ?? ""}</div>
+                        </td>
+                        <td title={WEBSITE_SCORE_TIP}>
+                          <div className="prio">{ws.score}</div>
+                          <div className="ws-kind">{ws.kind}</div>
                         </td>
                         <td>
                           {l.next_action || l.next_action_at ? (
@@ -316,7 +343,7 @@ export default function SalesHistory({
                   })
                 ) : (
                   <tr>
-                    <td colSpan={5}>
+                    <td colSpan={6}>
                       <div className="empty-list">
                         {rows.length ? "No businesses match these filters." : "Nothing yet. Outcomes logged in Find show up here."}
                       </div>
@@ -339,7 +366,9 @@ export default function SalesHistory({
               me={me}
               members={members}
               sourceDetail={selectedRow.lead.source_detail ?? ""}
-              onSaved={applySaved}
+              onSaved={(ex) => applySaved(selectedRow.lead.id, ex)}
+              onRestored={(ex) => applySaved(selectedRow.lead.id, ex)}
+              onWebScore={(w) => applyWebScore(selectedRow.lead.id, w)}
             />
           ) : (
             <>

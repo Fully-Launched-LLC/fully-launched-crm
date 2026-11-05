@@ -1,12 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/components/lead-finder/audit.css";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/lead-finder/apiFetch";
 import type { PageSpeed, SavedAudit, ScannedPlace, ServiceKey } from "@/lib/lead-finder/types";
 import { buildRecommendations } from "@/lib/lead-finder/recommendations";
 import { buildCallScript, type PitchKey } from "@/lib/lead-finder/callScript";
+import { plausibleOwnerName } from "@/lib/lead-finder/ownerName";
+import { saveOwnerName } from "@/lib/sales/log";
 
 // Matteo's audit.html: call script (screen only), Google's PageSpeed scores,
 // snapshot, findings, recommendations, next step. Two requests instead of
@@ -45,16 +47,20 @@ function Rich({ text }: { text: string }) {
 export default function AuditReport({
   placeId,
   type,
-  leadId,
+  leadId: initialLeadId,
   memberId,
   saved,
+  recordOwner,
 }: {
   placeId: string;
   type: string;
   leadId: string | null;
   memberId: string;
   saved: SavedAudit | null;
+  // The Sales record's owner name: edited = a person typed it (title Owner).
+  recordOwner: { name: string | null; edited: boolean } | null;
 }) {
+  const [leadId, setLeadId] = useState<string | null>(initialLeadId);
   const [part1, setPart1] = useState<Part1 | null>(
     saved ? { lead: saved.place, speedUrl: null, previewUrl: saved.previewUrl } : null
   );
@@ -100,7 +106,7 @@ export default function AuditReport({
       const r = await apiFetch("/api/lead-finder/pagespeed", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: p.speedUrl }),
+        body: JSON.stringify({ url: p.speedUrl, placeId }),
       });
       const d = await r.json();
       setSpeed(r.ok ? d : { error: d.error || "PageSpeed check failed." });
@@ -114,7 +120,44 @@ export default function AuditReport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const L = part1?.lead ?? null;
+  // Owner name: one a person typed wins; else a confident scan guess; else
+  // unknown. Editable here; the call script uses it.
+  const [owner, setOwner] = useState<string | null | undefined>(
+    recordOwner?.edited ? recordOwner.name : recordOwner && plausibleOwnerName(recordOwner.name) ? recordOwner.name : undefined
+  );
+  const [ownerEdit, setOwnerEdit] = useState<string | null>(null);
+  const [ownerMsg, setOwnerMsg] = useState<string | null>(null);
+  const scanned = part1?.lead ?? null;
+  const L = useMemo(
+    () =>
+      scanned
+        ? { ...scanned, ownerName: owner !== undefined ? owner : plausibleOwnerName(scanned.ownerName) ? scanned.ownerName : null }
+        : null,
+    [scanned, owner]
+  );
+
+  async function saveOwner() {
+    if (!L || ownerEdit == null) return;
+    setOwnerMsg(null);
+    const res = await saveOwnerName(
+      createClient(),
+      memberId,
+      {
+        key: placeId,
+        place: L,
+        searchType: type || null,
+        existing: leadId
+          ? { id: leadId, company: L.name, contact_name: owner ?? null, title: null, status: "new", owner: null, project_id: null, next_action: null, next_action_at: null, last_touch: null, matched_on: "google_place_id" }
+          : null,
+      },
+      ownerEdit,
+      "Audit"
+    );
+    if (res.existing) setLeadId(res.existing.id);
+    if (res.error) return setOwnerMsg(res.error);
+    setOwner(ownerEdit.trim() || null);
+    setOwnerEdit(null);
+  }
   const S = speed === "loading" ? null : speed;
   const recommendations = L ? buildRecommendations(L, S) : [];
 
@@ -156,6 +199,31 @@ export default function AuditReport({
       <div className="page">
         <div className="toolbar">
           {save && <span className={`saved${save.tone === "bad" ? " bad" : ""}`}>{save.text}</span>}
+          {L && (ownerEdit == null ? (
+            <span className="owner-line">
+              Owner: {L.ownerName ? <b>{L.ownerName}</b> : "unknown"}{" "}
+              <button type="button" className="plain" onClick={() => { setOwnerEdit(L.ownerName ?? ""); setOwnerMsg(null); }}>
+                {L.ownerName ? "Edit" : "Add"}
+              </button>
+            </span>
+          ) : (
+            <span className="owner-line">
+              <input
+                autoFocus
+                aria-label="Owner name"
+                placeholder="First and last name"
+                value={ownerEdit}
+                onChange={(e) => setOwnerEdit(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void saveOwner();
+                  if (e.key === "Escape") setOwnerEdit(null);
+                }}
+              />
+              <button type="button" onClick={() => void saveOwner()}>Save</button>
+              <button type="button" className="plain" onClick={() => setOwnerEdit(null)}>Cancel</button>
+            </span>
+          ))}
+          {ownerMsg && <span className="saved bad">{ownerMsg}</span>}
           {fromSaved && (
             <button type="button" className="plain" onClick={() => void run()}>
               Run again

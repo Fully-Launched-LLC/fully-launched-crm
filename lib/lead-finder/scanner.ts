@@ -1,8 +1,9 @@
 import "server-only";
 import type { GooglePlace } from "@/lib/lead-finder/google";
-import type { ScanTags, ScannedPlace, ServiceKey, ShopifyInfo } from "@/lib/lead-finder/types";
+import type { ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks } from "@/lib/lead-finder/types";
 import { extractCid } from "@/lib/lead-finder/cid";
 import { priorityScore } from "@/lib/lead-finder/priority";
+import { findOwnerName } from "@/lib/lead-finder/ownerName";
 
 /**
  * FullyLaunched Lead Finder: Opportunity Scanner
@@ -123,6 +124,17 @@ const TECH_PATTERNS: [string, RegExp][] = [
   ["FieldRoutes (ServiceTitan)", /fieldroutes\.com|pestroutes\.com/i],
   ["Housecall Pro", /housecallpro\.com/i],
   ["Jobber", /getjobber\.com|clienthub\.getjobber/i],
+  ["Service Fusion", /servicefusion\.com/i],
+  ["FieldEdge", /fieldedge\.com/i],
+  ["Workiz", /workiz\.com/i],
+  ["Successware", /successware(?:21)?\.(?:com|net)/i],
+  ["BuildOps", /buildops\.com/i],
+  ["ServiceTrade", /servicetrade\.com/i],
+  ["Kickserv", /kickserv\.com/i],
+  ["GorillaDesk", /gorilladesk\.com/i],
+  ["Service Autopilot", /serviceautopilot\.com/i],
+  ["JobNimbus", /jobnimbus\.com/i],
+  ["AccuLynx", /acculynx\.com/i],
   ["QuickBooks", /quickbooks\.intuit\.com|connect\.intuit\.com|intuit\.me/i],
   ["Square", /squareup\.com|square\.site|squarecdn\.com/i],
   ["Mindbody", /mindbodyonline\.com|mindbody\.io/i],
@@ -284,6 +296,7 @@ function looksLikeServiceBusiness(place: GooglePlace, searchType: string): boole
 }
 
 type SiteInfo = {
+  checks: SiteChecks;
   secure: boolean;
   mobileFriendly: boolean;
   copyrightYear: number | null;
@@ -299,6 +312,7 @@ type SiteInfo = {
 /** Look through the page code for clues. */
 export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInfo {
   const result: SiteInfo = {
+    checks: siteChecks(html, finalUrl),
     secure: /^https:/i.test(finalUrl || ""),
     mobileFriendly: /<meta[^>]+name=["']?viewport/i.test(html),
     copyrightYear: null,
@@ -337,6 +351,25 @@ export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInf
   return result;
 }
 
+// Website score inputs (lib/lead-finder/websiteScore.ts).
+const SCHEMA_TYPE_RE = /"@type"\s*:\s*(?:\[[^\]]*\]|"[^"]*")/gi;
+const LOCAL_SCHEMA_RE = /LocalBusiness|Organization|Corporation|HVACBusiness|Plumber|Electrician|RoofingContractor|HomeAndConstructionBusiness|GeneralContractor|ProfessionalService|AutoRepair|Dentist|MedicalBusiness|Restaurant|Store|LegalService|Attorney|AccountingService|BeautySalon|HairSalon|HealthAndBeautyBusiness/;
+function siteChecks(html: string, finalUrl: string | undefined): SiteChecks {
+  const jsonLd = Array.from(html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)).map((m) => m[1]).join(" ");
+  const types = (jsonLd.match(SCHEMA_TYPE_RE) || []).join(" ");
+  const micro = (html.match(/itemtype=["'][^"']*schema\.org\/(\w+)/gi) || []).join(" ");
+  const title = /<title[^>]*>\s*[^<\s][^<]*<\/title>/i.test(html);
+  return {
+    https: /^https:/i.test(finalUrl || ""),
+    mobile: /<meta[^>]+name=["']?viewport/i.test(html),
+    title,
+    metaDescription: /<meta[^>]+name=["']?description["']?[^>]+content=["']\s*[^"'\s][^"']*["']|<meta[^>]+content=["']\s*[^"'\s][^"']*["'][^>]+name=["']?description/i.test(html),
+    h1: /<h1[\s>][\s\S]*?<\/h1>/i.test(html),
+    localSchema: LOCAL_SCHEMA_RE.test(types) || LOCAL_SCHEMA_RE.test(micro),
+    faqSchema: /FAQPage/.test(types) || /FAQPage/i.test(micro),
+  };
+}
+
 /** Strip page code down to readable text. */
 function htmlToText(html: string): string {
   return html
@@ -360,24 +393,8 @@ export function findEmails(html: string): string[] {
   return Array.from(found);
 }
 
-/** Look for "Owner: Jane Smith" / "John Doe, founder" style text. Best guess only. */
-export function findOwnerName(html: string): string | null {
-  const text = htmlToText(html);
-  const NAME = "([A-Z][a-z]+(?:\\s[A-Z]\\.)?\\s[A-Z][a-zA-Z'’-]+)";
-  const ROLE = "(?:owner|co-owner|founder|co-founder|president|proprietor|ceo|principal)";
-  const patterns = [
-    new RegExp(ROLE + "\\s*(?:&|and)?\\s*(?:[a-z-]+\\s)?[,:–—-]?\\s*(?:is\\s)?" + NAME, "i"),
-    new RegExp(NAME + "\\s*[,–—-]\\s*(?:the\\s)?" + ROLE, "i"),
-    new RegExp("(?:founded|started|owned|run)\\sby\\s" + NAME, "i"),
-    new RegExp("meet\\s(?:the\\sowner,?\\s)?" + NAME, "i"),
-  ];
-  const NOT_NAMES = /^(Our|The|We|About|Contact|Home|Call|Free|Read|Learn|More|Your|This|Book|Get|View|All|Click|Service|Services)\b/;
-  for (const re of patterns) {
-    const m = text.match(re);
-    if (m && m[1] && !NOT_NAMES.test(m[1])) return m[1].trim();
-  }
-  return null;
-}
+// About-style pages, where owners introduce themselves. First match only.
+const ABOUT_LINK_RE = /(?:^|[^a-z])(?:about(?:[-_\s]?us)?|our[-_\s]?story|our[-_\s]?team|meet[-_\s]?the[-_\s]?team|team|who[-_\s]?we[-_\s]?are|our[-_\s]?company)(?:[^a-z]|$)/i;
 
 const LINK_RE = /<a[^>]+href=["']([^"'#]+)["'][^>]*>([\s\S]{0,80}?)<\/a>/gi;
 
@@ -491,12 +508,20 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
         tags.website.push("Looks outdated (© " + info.copyrightYear + ")");
       }
 
-      // ---- CONTACTS: homepage + one Contact/About page ----
+      // ---- CONTACTS: homepage, one About page (owner name), one Contact page ----
       const finalUrl = page.finalUrl || website;
       emails = findEmails(page.html);
       ownerName = findOwnerName(page.html);
       contactPage = findContactPage(page.html, finalUrl);
-      if (contactPage && (emails.length === 0 || !ownerName)) {
+      const aboutPage = ownerName ? null : findLinkTo(page.html, finalUrl, ABOUT_LINK_RE);
+      if (aboutPage) {
+        const ap = await fetchHomepageOnce(aboutPage, PAGE_TIMEOUT_MS, ctx);
+        if (ap.ok && ap.html) {
+          ownerName = findOwnerName(ap.html);
+          emails = Array.from(new Set([...emails, ...findEmails(ap.html)]));
+        }
+      }
+      if (contactPage && contactPage !== aboutPage && (emails.length === 0 || !ownerName)) {
         const cp = await fetchHomepageOnce(contactPage, PAGE_TIMEOUT_MS, ctx);
         if (cp.ok && cp.html) {
           emails = Array.from(new Set([...emails, ...findEmails(cp.html)]));
@@ -675,5 +700,7 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     hours: (place.regularOpeningHours && place.regularOpeningHours.weekdayDescriptions) || null,
     cid: extractCid(place.googleMapsUri),
     priority: priorityScore({ services, rating, reviews: reviewCount, score }),
+    site: siteInfo ? siteInfo.checks : null,
+    photos: (place.photos || []).length,
   };
 }

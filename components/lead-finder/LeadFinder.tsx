@@ -8,6 +8,7 @@ import Dropdown from "@/components/lead-finder/Dropdown";
 import RocketStage, { type Phase } from "@/components/lead-finder/RocketStage";
 import MissionControl, { type Svc } from "@/components/lead-finder/MissionControl";
 import SalesHistory from "@/components/sales/SalesHistory";
+import { OutcomeToastProvider } from "@/components/sales/OutcomeToast";
 import LocalDateTime from "@/components/LocalDateTime";
 import { SessionExpiredError, apiFetch, readLastRun, writeLastRun } from "@/lib/lead-finder/apiFetch";
 import { createClient } from "@/lib/supabase/client";
@@ -614,6 +615,7 @@ export default function LeadFinder({
 
   return (
     <div className={`lf-root ${LF_FONT_VARS}`}>
+      <OutcomeToastProvider>
       <header className="top">
         <div className="top-in">
           <div className="brand">
@@ -845,6 +847,7 @@ export default function LeadFinder({
           <SalesHistory me={member} members={members} initialLeadId={initialLeadId} onSelect={setHistoryUrl} />
         </div>
       )}
+      </OutcomeToastProvider>
     </div>
   );
 }

@@ -28,14 +28,16 @@ export default async function AuditPage({
 
   let saved: SavedAudit | null = null;
   let leadId: string | null = null;
+  let recordOwner: { name: string | null; edited: boolean } | null = null;
   if (searchParams.lead) {
     const { data } = await createClient()
       .from("leads")
-      .select("id, audit")
+      .select("id, audit, contact_name, title")
       .eq("id", searchParams.lead)
       .maybeSingle();
     if (data) {
       leadId = data.id;
+      recordOwner = { name: data.contact_name, edited: data.title === "Owner" };
       const a = data.audit as SavedAudit | null;
       if (a && a.version === 1 && a.place) saved = a;
     }
@@ -48,6 +50,7 @@ export default async function AuditPage({
       leadId={leadId}
       memberId={member.id}
       saved={saved}
+      recordOwner={recordOwner}
     />
   );
 }

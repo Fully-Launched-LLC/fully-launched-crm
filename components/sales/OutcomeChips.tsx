@@ -2,11 +2,11 @@
 
 import { useState } from "react";
 import type { ExistingLead } from "@/lib/lead-finder/types";
-import { HIDDEN_OUTCOMES, OUTCOMES, OUTCOME_CLASS, classifyTouch, shortDate, type Outcome } from "@/lib/sales/outcomes";
+import { HIDDEN_OUTCOMES, OUTCOMES, OUTCOME_CLASS, classifyTouch, shortDate, type Outcome, type OutcomeKey } from "@/lib/sales/outcomes";
 
-// One-click outcomes (rows, bulk bar, detail panel). A click opens a small
-// optional-note box; Save (or Enter) logs it. onSave returns an error
-// message, or null when it worked.
+// One-click outcomes (detail panel, bulk bar). The first click saves;
+// the caller shows the confirmation toast (Add note, Undo). onSave returns
+// an error message, or null when it worked.
 export function OutcomeChips({
   big,
   disabled,
@@ -14,30 +14,18 @@ export function OutcomeChips({
 }: {
   big?: boolean;
   disabled?: boolean;
-  onSave: (o: Outcome, note: string) => Promise<string | null>;
+  onSave: (o: Outcome) => Promise<string | null>;
 }) {
-  const [pending, setPending] = useState<Outcome | null>(null);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState<OutcomeKey | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  function pick(o: Outcome) {
-    setPending(pending?.key === o.key ? null : o);
-    setNote("");
+  async function save(o: Outcome) {
+    if (saving) return;
+    setSaving(o.key);
     setError(null);
-  }
-
-  async function save() {
-    if (!pending || busy) return;
-    setBusy(true);
-    setError(null);
-    const err = await onSave(pending, note);
-    setBusy(false);
+    const err = await onSave(o);
+    setSaving(null);
     if (err) setError(err);
-    else {
-      setPending(null);
-      setNote("");
-    }
   }
 
   return (
@@ -48,43 +36,16 @@ export function OutcomeChips({
             key={o.key}
             type="button"
             className={`oc${HIDDEN_OUTCOMES.includes(o.key) ? " neg" : ""}`}
-            aria-pressed={pending?.key === o.key}
+            aria-pressed={saving === o.key}
             title={o.label}
-            disabled={disabled || busy}
-            onClick={() => pick(o)}
+            disabled={disabled || !!saving}
+            onClick={() => void save(o)}
           >
-            {big ? o.label : o.short}
+            {saving === o.key ? "Saving…" : o.label}
           </button>
         ))}
       </div>
-      {pending && (
-        <div className="oc-note">
-          <label className="hint" htmlFor={`oc-note-${pending.key}`}>
-            <b style={{ color: "var(--bright)" }}>{pending.label}</b>. Note <em>optional</em>
-          </label>
-          <input
-            id={`oc-note-${pending.key}`}
-            className="field"
-            autoFocus
-            value={note}
-            placeholder="Who you talked to, what they said…"
-            onChange={(e) => setNote(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") void save();
-              if (e.key === "Escape") setPending(null);
-            }}
-          />
-          {error && <span className="error" role="alert">{error}</span>}
-          <div className="row-btns">
-            <button type="button" className="btn btn-gold" disabled={busy} onClick={() => void save()}>
-              {busy ? "Saving…" : "Save"}
-            </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => setPending(null)}>
-              Cancel
-            </button>
-          </div>
-        </div>
-      )}
+      {error && <p className="bad-text" role="alert" style={{ marginTop: 6, fontSize: 12.5 }}>{error}</p>}
     </div>
   );
 }
@@ -111,7 +72,7 @@ export function LatestOutcome({
   const c = classifyTouch(t);
   return (
     <div className="latest">
-      <span className={`st ${OUTCOME_CLASS[c.key ?? "other"]}`}>{c.label}</span> · {memberName(t.touched_by)} · {shortDate(t.touched_at)}
+      <span className={`st ${OUTCOME_CLASS[c.key]}`}>{c.label}</span> · {memberName(t.touched_by)} · {shortDate(t.touched_at)}
       {t.summary && <div className="latest-note">“{t.summary}”</div>}
     </div>
   );

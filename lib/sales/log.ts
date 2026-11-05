@@ -4,12 +4,16 @@ import { leadFromScan } from "@/lib/lead-finder/toLead";
 import { upsertLeads } from "@/lib/leads/upsert";
 import { resolveChannel, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
 
-// Logging an outcome in Sales (search rows, bulk bar, detail panel).
-// A business with no record is saved first through upsert_leads (mode skip,
-// source lead_finder, owner = found_by = me), so a business someone else
-// saved a moment ago is matched, not duplicated. Then one lead_touches row
-// per business, as me; the touch trigger (migration 017) stamps
-// last_touch_at and moves leads.status. Runs in the browser, so RLS applies.
+// Writes from Sales (search rows, bulk bar, detail panel, audit page). Runs
+// in the browser, so RLS applies.
+//   ensureRecords: a business with no record is saved through upsert_leads
+//     (mode skip, source lead_finder, owner = found_by = me), so a business a
+//     teammate saved a second ago is matched, not duplicated.
+//   logOutcome: ensureRecords, then one lead_touches row per business, as
+//     me, saved on the first click. The touch trigger (migration 017) stamps
+//     last_touch_at and moves leads.status.
+//   undoOutcome / noteOutcome: the toast's Undo (within 10 seconds) and
+//     Add note.
 
 export type LogItem = {
   key: string; // caller's id for the row (place id)
@@ -18,22 +22,24 @@ export type LogItem = {
   existing: ExistingLead | null;
 };
 
-export type LogResult = {
-  saved: { key: string; existing: ExistingLead }[];
-  failed: { key: string; reason: string }[];
+export type SavedOutcome = {
+  key: string;
+  existing: ExistingLead; // after the touch
+  prev: ExistingLead | null; // before (null: the record was created by this save)
+  touchId: string;
 };
 
-export async function logOutcome(
+export type LogResult = { saved: SavedOutcome[]; failed: { key: string; reason: string }[] };
+
+export async function ensureRecords(
   supabase: SupabaseClient,
   meId: string,
   items: LogItem[],
-  outcome: Outcome,
-  note: string,
   sourceDetail: string
-): Promise<LogResult> {
+): Promise<{ records: Map<string, { existing: ExistingLead; created: boolean }>; failed: LogResult["failed"] }> {
   const failed: LogResult["failed"] = [];
-  const records = new Map<string, ExistingLead>();
-  items.forEach((it) => it.existing && records.set(it.key, it.existing));
+  const records = new Map<string, { existing: ExistingLead; created: boolean }>();
+  items.forEach((it) => it.existing && records.set(it.key, { existing: it.existing, created: false }));
 
   const missing = items.filter((it) => !it.existing);
   if (missing.length) {
@@ -49,58 +55,152 @@ export async function logOutcome(
         return;
       }
       records.set(it.key, {
-        id: o.leadId,
-        company: it.place.name,
-        status: "new",
-        owner: o.result === "inserted" ? meId : null,
-        project_id: null,
-        next_action: null,
-        next_action_at: null,
-        last_touch: null,
-        matched_on: o.matchedOn ?? "google_place_id",
+        created: o.result === "inserted",
+        existing: {
+          id: o.leadId,
+          company: it.place.name,
+          contact_name: it.place.ownerName,
+          title: it.place.ownerName ? "Possible owner" : null,
+          status: "new",
+          owner: o.result === "inserted" ? meId : null,
+          project_id: null,
+          next_action: null,
+          next_action_at: null,
+          last_touch: null,
+          matched_on: o.matchedOn ?? "google_place_id",
+        },
       });
     });
   }
+  return { records, failed };
+}
 
+export async function logOutcome(
+  supabase: SupabaseClient,
+  meId: string,
+  items: LogItem[],
+  outcome: Outcome,
+  sourceDetail: string
+): Promise<LogResult> {
+  const { records, failed } = await ensureRecords(supabase, meId, items, sourceDetail);
   const keys = items.map((it) => it.key).filter((k) => records.has(k));
   if (!keys.length) return { saved: [], failed };
 
-  const summary = note.trim() || null;
   const { data, error } = await supabase
     .from("lead_touches")
     .insert(
       keys.map((k) => {
-        const rec = records.get(k)!;
+        const rec = records.get(k)!.existing;
         return {
           lead_id: rec.id,
           channel: resolveChannel(outcome, rec.last_touch?.channel),
           direction: outcome.direction,
           outcome: outcome.outcome,
-          summary,
           touched_by: meId,
         };
       })
     )
-    .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at");
+    .select("id, lead_id, channel, direction, outcome, summary, touched_by, touched_at");
   if (error) {
     keys.forEach((k) => failed.push({ key: k, reason: error.message }));
     return { saved: [], failed };
   }
 
-  const byLead = new Map<string, LatestTouch>();
-  (data ?? []).forEach((t) =>
-    byLead.set(t.lead_id, {
-      channel: t.channel,
-      direction: t.direction,
-      outcome: t.outcome,
-      summary: t.summary,
-      touched_by: t.touched_by,
-      touched_at: t.touched_at,
-    })
-  );
-  const saved = keys.map((k) => {
-    const rec = records.get(k)!;
-    return { key: k, existing: { ...rec, last_touch: byLead.get(rec.id) ?? rec.last_touch } };
+  const byLead = new Map<string, LatestTouch & { id: string }>();
+  (data ?? []).forEach((t) => byLead.set(t.lead_id, t as LatestTouch & { id: string }));
+  const saved: SavedOutcome[] = [];
+  keys.forEach((k) => {
+    const { existing: rec, created } = records.get(k)!;
+    const t = byLead.get(rec.id);
+    if (!t) return failed.push({ key: k, reason: "Not saved." });
+    const { id, ...touch } = t;
+    saved.push({
+      key: k,
+      prev: created ? null : rec,
+      touchId: id,
+      existing: { ...rec, status: statusAfter(rec.status, outcome), last_touch: touch },
+    });
   });
   return { saved, failed };
+}
+
+// What the touch trigger does to leads.status, close enough for display
+// until the next reload.
+function statusAfter(status: string, o: Outcome): string {
+  if (status === "converted") return status;
+  if (o.outcome === "not_interested" || o.outcome === "bad_fit") return "not_interested";
+  if (o.outcome === "interested" || o.outcome === "meeting_booked") return "interested";
+  return status === "new" ? "contacted" : status;
+}
+
+// Undo: delete the touches, then put each record back. A record this save
+// created is deleted if RLS allows (Admin); otherwise it stays, reset to
+// New with no touch. Returns the state each key should go back to (null:
+// no record any more).
+export async function undoOutcome(
+  supabase: SupabaseClient,
+  saved: SavedOutcome[]
+): Promise<{ restored: { key: string; existing: ExistingLead | null }[]; error: string | null }> {
+  const ids = saved.map((s) => s.touchId);
+  const { data, error } = await supabase.from("lead_touches").delete().in("id", ids).select("id");
+  if (error) return { restored: [], error: error.message };
+  if ((data ?? []).length < ids.length) return { restored: [], error: "Could not undo: the touch was already changed." };
+
+  const restored: { key: string; existing: ExistingLead | null }[] = [];
+  const created = saved.filter((s) => !s.prev);
+  let deleted = new Set<string>();
+  if (created.length) {
+    const { data: gone } = await supabase.from("leads").delete().in("id", created.map((s) => s.existing.id)).select("id");
+    deleted = new Set((gone ?? []).map((g) => g.id as string));
+  }
+  for (const s of saved) {
+    if (!s.prev && deleted.has(s.existing.id)) {
+      restored.push({ key: s.key, existing: null });
+      continue;
+    }
+    const back: ExistingLead = s.prev ?? { ...s.existing, status: "new", last_touch: null };
+    await supabase
+      .from("leads")
+      .update({ status: back.status, last_touch_at: back.last_touch?.touched_at ?? null })
+      .eq("id", back.id);
+    restored.push({ key: s.key, existing: back });
+  }
+  return { restored, error: null };
+}
+
+export async function noteOutcome(supabase: SupabaseClient, saved: SavedOutcome[], note: string): Promise<string | null> {
+  const ids = saved.map((s) => s.touchId);
+  const { data, error } = await supabase.from("lead_touches").update({ summary: note.trim() || null }).in("id", ids).select("id");
+  if (error) return error.message;
+  if ((data ?? []).length < ids.length) return "The note wasn't saved on every touch.";
+  return null;
+}
+
+// Owner name edit (detail panel, audit page): saves the business first if
+// it has no record, then writes contact_name. RLS: owner, unowned, or
+// Admin/Manager; a blocked update returns no rows.
+export async function saveOwnerName(
+  supabase: SupabaseClient,
+  meId: string,
+  item: LogItem,
+  name: string,
+  sourceDetail: string
+): Promise<{ existing: ExistingLead | null; error: string | null }> {
+  const clean = name.trim() || null;
+  const { records, failed } = await ensureRecords(
+    supabase,
+    meId,
+    [{ ...item, place: { ...item.place, ownerName: clean } }],
+    sourceDetail
+  );
+  if (failed.length) return { existing: null, error: failed[0].reason };
+  const rec = records.get(item.key)!.existing;
+  const { data, error } = await supabase
+    .from("leads")
+    .update({ contact_name: clean, title: clean ? "Owner" : null })
+    .eq("id", rec.id)
+    .select("id");
+  if (error) return { existing: rec, error: error.message };
+  if (!data?.length) return { existing: rec, error: "Not saved. Only the business's owner or an Admin/Manager can change it." };
+  return { existing: { ...rec, contact_name: clean, title: clean ? "Owner" : null }, error: null };
 }

@@ -26,6 +26,7 @@ export default function ConvertDialog({
   firstTouch,
   members,
   me,
+  callBooked = false,
   onClose,
   onConverted,
 }: {
@@ -33,6 +34,9 @@ export default function ConvertDialog({
   firstTouch: { channel: string; direction: string } | null;
   members: TeamMember[];
   me: TeamMember;
+  // Opened by the Booked call outcome: the call is already on the calendar,
+  // so there's no Send booking link step to do afterwards.
+  callBooked?: boolean;
   onClose: () => void;
   onConverted: (projectId: string, row: LeadListRow | null) => void;
 }) {
@@ -83,7 +87,7 @@ export default function ConvertDialog({
         build_value: kind === "build" ? amount : null,
         subscription: kind === "subscription" && amount != null,
         subscription_value: kind === "subscription" ? amount : null,
-        notes: note.trim() || null,
+        notes: [callBooked ? "Call booked from Sales." : "", note.trim()].filter(Boolean).join(" ") || null,
       })
       .select("id")
       .single();
@@ -127,6 +131,11 @@ export default function ConvertDialog({
         <p className="mt-1 text-xs text-neutral-500">
           Creates a project for <b>{lead.company ?? lead.name}</b> at stage Interested.
         </p>
+        {callBooked && (
+          <p className="mt-2 rounded-md bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
+            Call already booked, so there&apos;s no booking link to send.
+          </p>
+        )}
 
         <div className="mt-4 grid grid-cols-2 gap-3">
           <label className={label}>
