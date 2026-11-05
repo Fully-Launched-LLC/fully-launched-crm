@@ -433,7 +433,7 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
   for (let i = 0; i < leadIds.length; i += 100) {
     const { data } = await supabase
       .from("lead_touches")
-      .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at")
+      .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, details")
       .in("lead_id", leadIds.slice(i, i + 100))
       .order("touched_at", { ascending: false });
     (data ?? []).forEach((t) => {
@@ -445,6 +445,7 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
           summary: t.summary,
           touched_by: t.touched_by,
           touched_at: t.touched_at,
+          details: t.details ?? null,
         });
       }
     });

@@ -356,3 +356,17 @@
 .lf-root .um-link .field{height:40px;font-size:13px;border-radius:10px;}
 .lf-root .um-pick{text-align:left;padding:8px 12px;border:1px solid var(--line3);border-radius:9px;background:#0F1729;color:var(--ink);font-size:13px;font-weight:600;}
 .lf-root .um-pick:hover{border-color:var(--gold);}
+.lf-root .oc-follow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin-top:10px;}
+.lf-root .oc-follow .btn{min-height:32px;padding:0 10px;font-size:12.5px;}
+.lf-root .oc-follow .field{height:34px;width:auto;font-size:13px;border-radius:8px;padding:0 8px;}
+.lf-root .touch-line{color:var(--faint);}
+.lf-root .touch-line .st{padding:2px 8px;font-size:11px;}
+.lf-root .draft-overlay{position:fixed;inset:0;z-index:65;background:rgba(2,4,9,.7);display:flex;align-items:flex-start;justify-content:center;padding:40px 16px;overflow-y:auto;}
+.lf-root .draft{width:min(680px,100%);padding:20px;display:flex;flex-direction:column;gap:12px;}
+.lf-root .draft-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;}
+.lf-root .draft h3{font:700 20px var(--lf-display),sans-serif;color:var(--bright);}
+.lf-root .draft .field{height:42px;font-size:14px;}
+.lf-root .draft textarea.draft-body{min-height:300px;font-size:14px;line-height:1.55;}
+.lf-root .draft-btns{display:flex;flex-wrap:wrap;gap:8px;}
+.lf-root .na-form{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:10px;border:1px solid var(--gold);border-radius:10px;background:rgba(212,178,127,.08);}
+.lf-root .na-form .field{height:38px;font-size:13px;border-radius:9px;}

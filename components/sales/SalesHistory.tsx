@@ -15,6 +15,16 @@ import BusinessDetail from "@/components/sales/BusinessDetail";
 import { LatestOutcome } from "@/components/sales/OutcomeChips";
 import UnmatchedMeetings from "@/components/sales/UnmatchedMeetings";
 
+// "Follow-ups due": next_action_at today or earlier (viewer's day), sorted by
+// due date. The Sales nav badge links here with ?due=1 (person: Mine).
+function endOfToday(): number {
+  const d = new Date();
+  d.setHours(23, 59, 59, 999);
+  return d.getTime();
+}
+const isDue = (r: { lead: { next_action_at: string | null } }) =>
+  !!r.lead.next_action_at && new Date(r.lead.next_action_at).getTime() <= endOfToday();
+
 // Sales > History: every Sales business (leads with source in
 // SALES_SOURCES; legacy outreach never shows), latest outcome first.
 // "Person" and the date range go by the latest outcome (who logged it,
@@ -46,11 +56,14 @@ export default function SalesHistory({
   me,
   members,
   initialLeadId,
+  initialDue,
   onSelect,
 }: {
   me: TeamMember | null;
   members: TeamMember[];
   initialLeadId: string | null;
+  // ?due=1: start on Follow-ups due, Mine.
+  initialDue: boolean;
   onSelect: (leadId: string | null) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
@@ -58,7 +71,8 @@ export default function SalesHistory({
   const [error, setError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(initialLeadId);
   const [outcome, setOutcome] = useState("all");
-  const [person, setPerson] = useState("all");
+  const [person, setPerson] = useState(initialDue ? "mine" : "all");
+  const [dueOnly, setDueOnly] = useState(initialDue);
   const [branch, setBranch] = useState("all");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -86,7 +100,7 @@ export default function SalesHistory({
     for (let p = 0; ; p += PAGE) {
       const { data, error: e } = await supabase
         .from("lead_touches")
-        .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, leads!inner(source)")
+        .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, details, leads!inner(source)")
         .in("leads.source", sources)
         .order("touched_at", { ascending: false })
         .range(p, p + PAGE - 1);
@@ -100,6 +114,7 @@ export default function SalesHistory({
             summary: t.summary,
             touched_by: t.touched_by,
             touched_at: t.touched_at,
+            details: t.details ?? null,
           });
       });
       if ((data ?? []).length < PAGE) break;
@@ -116,7 +131,9 @@ export default function SalesHistory({
     () =>
       (rows ?? [])
         .filter((r) => outcome === "all" || outcomeOf(r) === outcome)
-        .filter((r) => person === "all" || personOf(r) === (person === "mine" ? me?.id : person))
+        .filter((r) => !dueOnly || isDue(r))
+        // With Follow-ups due, "person" means who it's assigned to (whose follow-up it is).
+        .filter((r) => person === "all" || (dueOnly ? r.lead.owner : personOf(r)) === (person === "mine" ? me?.id : person))
         .filter((r) => branch === "all" || (r.lead.branch_fit ?? []).includes(branch as Branch))
         .filter((r) => {
           if (!from && !to) return true;
@@ -130,8 +147,12 @@ export default function SalesHistory({
               .filter(Boolean)
               .some((v) => String(v).toLowerCase().includes(needle))
         )
-        .sort((a, b) => whenOf(b).localeCompare(whenOf(a))),
-    [rows, outcome, person, branch, from, to, needle, me?.id]
+        .sort((a, b) =>
+          dueOnly
+            ? (a.lead.next_action_at ?? "").localeCompare(b.lead.next_action_at ?? "")
+            : whenOf(b).localeCompare(whenOf(a))
+        ),
+    [rows, outcome, person, branch, from, to, needle, me?.id, dueOnly]
   );
 
   const selectedRow = (rows ?? []).find((r) => r.lead.id === selectedId) ?? null;
@@ -264,6 +285,10 @@ export default function SalesHistory({
                 onChange={setBranch}
                 options={[{ value: "all", label: "Branch: all" }, ...BRANCHES.map((b) => ({ value: b, label: b }))]}
               />
+              <label className="toggle" style={{ marginLeft: 0 }}>
+                <input type="checkbox" className="chk" checked={dueOnly} onChange={(e) => setDueOnly(e.target.checked)} />
+                Follow-ups due ({(rows ?? []).filter(isDue).length})
+              </label>
               <label className="date-f">
                 <span>From</span>
                 <input className="field" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />

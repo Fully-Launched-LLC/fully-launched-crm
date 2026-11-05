@@ -13,7 +13,7 @@ import LeadFinder from "@/components/lead-finder/LeadFinder";
 export default async function SalesPage({
   searchParams,
 }: {
-  searchParams: { run?: string; lead?: string; view?: string };
+  searchParams: { run?: string; lead?: string; view?: string; due?: string };
 }) {
   const teamMember = await getCurrentTeamMember();
   const supabase = createClient();
@@ -45,7 +45,8 @@ export default async function SalesPage({
       recentRuns={(runs ?? []) as LeadFinderRun[]}
       initialRunId={searchParams.run ?? null}
       fallbackRunId={mine?.[0]?.id ?? null}
-      initialTab={searchParams.lead || searchParams.view === "history" ? "history" : "find"}
+      initialTab={searchParams.lead || searchParams.due || searchParams.view === "history" ? "history" : "find"}
+      initialDue={searchParams.due === "1"}
       initialLeadId={searchParams.lead ?? null}
     />
   );

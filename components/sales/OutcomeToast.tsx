@@ -3,14 +3,30 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { ExistingLead } from "@/lib/lead-finder/types";
-import { noteOutcome, undoOutcome, type SavedOutcome } from "@/lib/sales/log";
+import { noteOutcome, undoOutcome, zeroRowsReason, type SavedOutcome } from "@/lib/sales/log";
 
 // The confirmation after an outcome is saved (first click): "Not interested
 // saved for X", with Add note (optional, any time while the toast is open)
 // and Undo (10 seconds; deletes the touches and puts the records back).
+// After No answer, Not available or Emailed it also offers a follow-up
+// (Tomorrow / In 3 days / Next week / Pick date): sets next_action
+// "Follow up: call" / "Follow up: email" and next_action_at (9:00 local on
+// that day). That's a leads update, so the 017 RLS rule applies (assigned
+// member, unassigned, or Admin/Manager).
 // One toast at a time; a new save replaces it.
 
 const UNDO_MS = 10_000;
+const FOLLOW_UP_MS = 20_000; // a toast offering a follow-up stays this long
+
+// 9:00 in the viewer's timezone, `days` from today (or on a YYYY-MM-DD).
+function followUpAt(days: number | string): Date {
+  const d = typeof days === "string" ? new Date(days + "T09:00:00") : new Date();
+  if (typeof days === "number") {
+    d.setDate(d.getDate() + days);
+    d.setHours(9, 0, 0, 0);
+  }
+  return d;
+}
 
 export type OutcomeToastInput = {
   text: string;
@@ -19,6 +35,8 @@ export type OutcomeToastInput = {
   onUndone: (restored: { key: string; existing: ExistingLead | null }[]) => void;
   // Called after the note is saved on the touches.
   onNote: (note: string) => void;
+  // Offer a follow-up; onSet gets the records it was set on.
+  followUp?: { kind: "call" | "email"; onSet: (leadIds: string[], nextAction: string, at: string) => void };
 };
 
 // flash: a plain message for 2 seconds (e.g. "Copied").
@@ -33,6 +51,8 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [followDone, setFollowDone] = useState(false);
   const [now, setNow] = useState(() => Date.now());
   const seq = useRef(0);
 
@@ -42,6 +62,8 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
     setNoteOpen(false);
     setNote("");
     setMsg(null);
+    setPicking(false);
+    setFollowDone(false);
     setNow(Date.now());
   }, []);
 
@@ -58,10 +80,42 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
   }, [toast]);
   const plain = !!toast && toast.saved.length === 0;
   const canUndo = !!toast && !plain && now - toast.at < UNDO_MS;
+  const offerFollow = !!toast?.followUp && !followDone;
   useEffect(() => {
-    if (!toast || noteOpen || busy) return;
-    if (now - toast.at > (plain ? 2000 : UNDO_MS + 2000)) setToast(null);
-  }, [toast, noteOpen, busy, now, plain]);
+    if (!toast || noteOpen || busy || picking) return;
+    const life = plain ? 2000 : offerFollow ? FOLLOW_UP_MS : UNDO_MS + 2000;
+    if (now - toast.at > life) setToast(null);
+  }, [toast, noteOpen, busy, picking, now, plain, offerFollow]);
+
+  async function setFollowUp(when: number | string) {
+    if (!toast?.followUp || busy) return;
+    const at = followUpAt(when);
+    if (Number.isNaN(at.getTime())) return;
+    const ids = Array.from(new Set(toast.saved.map((s) => s.existing.id)));
+    const nextAction = toast.followUp.kind === "email" ? "Follow up: email" : "Follow up: call";
+    setBusy(true);
+    const { data, error } = await supabase
+      .from("leads")
+      .update({ next_action: nextAction, next_action_at: at.toISOString() })
+      .in("id", ids)
+      .select("id");
+    setBusy(false);
+    setPicking(false);
+    if (error) return setMsg({ tone: "error", text: error.message });
+    const done = ((data ?? []) as { id: string }[]).map((r) => r.id);
+    if (done.length) toast.followUp.onSet(done, nextAction, at.toISOString());
+    const day = new Intl.DateTimeFormat("en-US", { weekday: "short", month: "short", day: "numeric" }).format(at);
+    if (done.length === ids.length) {
+      setMsg({ tone: "ok", text: `Follow-up set for ${day}.` });
+      setFollowDone(true);
+      setToast((t) => (t ? { ...t, at: Math.min(t.at, Date.now() - UNDO_MS) } : t)); // closes in 2s
+    } else if (ids.length === 1) {
+      setMsg({ tone: "error", text: (await zeroRowsReason(supabase, ids[0])).replace("Not saved", "Follow-up not set") });
+    } else {
+      setMsg({ tone: "error", text: `Follow-up set on ${done.length} of ${ids.length}. The rest are assigned to someone else.` });
+      setFollowDone(true);
+    }
+  }
 
   async function undo() {
     if (!toast || busy) return;
@@ -110,6 +164,27 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
               </button>
             </div>
           </div>
+          {offerFollow && (
+            <div className="oc-follow">
+              <span className="hint">Follow up ({toast.followUp!.kind}):</span>
+              <button type="button" className="btn" disabled={busy} onClick={() => void setFollowUp(1)}>Tomorrow</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => void setFollowUp(3)}>In 3 days</button>
+              <button type="button" className="btn" disabled={busy} onClick={() => void setFollowUp(7)}>Next week</button>
+              {picking ? (
+                <input
+                  className="field"
+                  type="date"
+                  autoFocus
+                  aria-label="Follow-up date"
+                  min={new Date().toISOString().slice(0, 10)}
+                  onChange={(e) => e.target.value && void setFollowUp(e.target.value)}
+                  onKeyDown={(e) => e.key === "Escape" && setPicking(false)}
+                />
+              ) : (
+                <button type="button" className="btn" disabled={busy} onClick={() => setPicking(true)}>Pick date</button>
+              )}
+            </div>
+          )}
           {noteOpen && (
             <div className="oc-toast-note">
               <input

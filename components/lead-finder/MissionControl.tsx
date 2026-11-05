@@ -173,6 +173,13 @@ export default function MissionControl({
         onUndone: (restored) => applySaved(restored),
         onNote: (note) =>
           applySaved(saved.map((s) => ({ key: s.key, existing: { ...s.existing, last_touch: s.existing.last_touch && { ...s.existing.last_touch, summary: note } } }))),
+        followUp: o.followUp
+          ? {
+              kind: o.followUp,
+              onSet: (ids, next_action, next_action_at) =>
+                applySaved(saved.filter((s) => ids.includes(s.existing.id)).map((s) => ({ key: s.key, existing: { ...s.existing, next_action, next_action_at } }))),
+            }
+          : undefined,
       });
     }
     return null;
@@ -338,7 +345,7 @@ export default function MissionControl({
             <div className="bulk">
               <b>{checked.size} selected</b>
               <div className="bulk-out">
-                <OutcomeChips disabled={!me} onSave={(o) => log(checkedRows, o)} />
+                <OutcomeChips bulk disabled={!me} onSave={(o) => log(checkedRows, o)} />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <button type="button" className="btn" onClick={() => exportCSV(true)}>

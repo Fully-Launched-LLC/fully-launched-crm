@@ -70,6 +70,7 @@ export default function LeadFinder({
   fallbackRunId,
   initialTab,
   initialLeadId,
+  initialDue,
 }: {
   member: TeamMember | null;
   members: TeamMember[];
@@ -79,6 +80,7 @@ export default function LeadFinder({
   fallbackRunId: string | null;
   initialTab: Tab;
   initialLeadId: string | null;
+  initialDue: boolean;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -844,7 +846,7 @@ export default function LeadFinder({
 
       {tab === "history" && (
         <div className="mission-view">
-          <SalesHistory me={member} members={members} initialLeadId={initialLeadId} onSelect={setHistoryUrl} />
+          <SalesHistory me={member} members={members} initialLeadId={initialLeadId} initialDue={initialDue} onSelect={setHistoryUrl} />
         </div>
       )}
       </OutcomeToastProvider>

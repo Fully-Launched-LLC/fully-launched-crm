@@ -29,12 +29,12 @@ import {
   ownerNameOf,
 } from "@/lib/sales/owner";
 import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
-import { OUTCOME_CLASS, classifyTouch, outcomeByKey, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
-import { OutcomeChips, LatestOutcome } from "@/components/sales/OutcomeChips";
+import { OUTCOME_CLASS, outcomeByKey, shortDate, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
+import { OutcomeChips, LatestOutcome, TouchLine } from "@/components/sales/OutcomeChips";
+import DraftEmail from "@/components/sales/DraftEmail";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import ConvertDialog from "@/components/sales/ConvertDialog";
 import BookCall from "@/components/sales/BookCall";
-import LocalDateTime from "@/components/LocalDateTime";
 
 // The side preview for one business, used by Find (search results) and
 // History: actions (call, maps, site, Preview site, audit), outcome buttons
@@ -152,7 +152,7 @@ export default function BusinessDetail({
     void (async () => {
       const { data } = await supabase
         .from("lead_touches")
-        .select("id, channel, direction, outcome, summary, touched_by, touched_at, meeting_note_id")
+        .select("id, meeting_note_id, channel, direction, outcome, summary, touched_by, touched_at, details")
         .eq("lead_id", ex.id)
         .order("touched_at", { ascending: false });
       if (!live) return;
@@ -246,17 +246,37 @@ export default function BusinessDetail({
   }
 
   // ---- Outcomes: saved on the first click ----
+  // Not available opens a small form first (who we spoke with); the rest
+  // save right away. The toast offers Add note, Undo, and for No answer /
+  // Not available / Emailed a follow-up date.
+  const [naForm, setNaForm] = useState<{ spoke_with: string; role: string; said: string; email: string } | null>(null);
+  const [naMsg, setNaMsg] = useState<string | null>(null);
+  const [draftOpen, setDraftOpen] = useState(false);
+
+  // OutcomeChips: returns an error message or null.
   async function save(o: Outcome): Promise<string | null> {
-    if (!me) return "You need a team member profile to log outcomes.";
+    if (o.needsForm) {
+      setNaMsg(null);
+      setNaForm({ spoke_with: "", role: "", said: "", email: "" });
+      return null;
+    }
+    return (await doSave(o)).error;
+  }
+
+  type SaveResult = { id: string; error: null } | { id: null; error: string };
+
+  async function doSave(o: Outcome, extra?: { summary?: string | null; details?: TouchDetails | null }): Promise<SaveResult> {
+    if (!me) return { id: null, error: "You need a team member profile to log outcomes." };
     let res;
     try {
-      res = await logOutcome(supabase, me.id, [{ key: l.id, place: l, searchType: r.search_type, existing: ex }], o, sourceDetail);
+      res = await logOutcome(supabase, me.id, [{ key: l.id, place: l, searchType: r.search_type, existing: ex }], o, sourceDetail, extra);
     } catch (e) {
-      return (e as Error).message || "Could not save.";
+      return { id: null, error: (e as Error).message || "Could not save." };
     }
-    if (res.failed.length) return res.failed[0].reason;
+    if (res.failed.length) return { id: null, error: res.failed[0].reason };
     const saved = res.saved[0];
-    onSaved(saved.existing);
+    let current = saved.existing;
+    onSaved(current);
     setReload((n) => n + 1);
     toast.show({
       text: `${o.label} saved for ${l.name}.`,
@@ -266,15 +286,47 @@ export default function BusinessDetail({
         setReload((n) => n + 1);
       },
       onNote: (note) => {
-        onSaved({ ...saved.existing, last_touch: saved.existing.last_touch && { ...saved.existing.last_touch, summary: note } });
+        current = { ...current, last_touch: current.last_touch && { ...current.last_touch, summary: note } };
+        onSaved(current);
         setReload((n) => n + 1);
       },
+      followUp: o.followUp
+        ? {
+            kind: o.followUp,
+            onSet: (_ids, next_action, next_action_at) => {
+              current = { ...current, next_action, next_action_at };
+              onSaved(current);
+            },
+          }
+        : undefined,
     });
     // Interested / Booked call: Move to Interested right away (when allowed).
     if (o.opensMove && !saved.existing.project_id && canEditLead(saved.existing, me))
       void openConvert(saved.existing.id, o.key === "booked_call");
-    return null;
+    return { id: saved.existing.id, error: null };
   }
+
+  async function saveNotAvailable() {
+    if (!naForm || !me) return;
+    if (!naForm.spoke_with.trim()) return setNaMsg("Who did you speak with?");
+    setNaMsg(null);
+    const email = naForm.email.trim();
+    const details: TouchDetails = { spoke_with: naForm.spoke_with.trim() };
+    if (naForm.role.trim()) details.role = naForm.role.trim();
+    if (email) details.email = email;
+    const res = await doSave(outcomeByKey("not_available"), { summary: naForm.said, details });
+    if (res.error) return setNaMsg(res.error);
+    setNaForm(null);
+    if (email) {
+      const c = await saveBusinessContact(supabase, me.id, { key: l.id, place: l, searchType: r.search_type, existing: null }, { email }, sourceDetail);
+      if (c.existing) onSaved(c.existing);
+      if (c.error) setContactMsg("Call saved, but the email wasn't: " + c.error);
+    }
+  }
+
+  // Last gatekeeper we spoke with (Not available), for the email draft.
+  const gatekeeper =
+    touches.find((t) => t.details?.spoke_with)?.details?.spoke_with ?? ex?.last_touch?.details?.spoke_with ?? null;
 
   return (
     <>
@@ -326,11 +378,33 @@ export default function BusinessDetail({
         <a className="btn btn-gold" style={{ gridColumn: "1 / -1" }} href={audit} target="_blank" rel="noopener noreferrer">
           Run audit
         </a>
+        <button type="button" className="btn" style={{ gridColumn: "1 / -1" }} disabled={!me} onClick={() => setDraftOpen(true)}>
+          Draft email
+        </button>
       </div>
 
       <div>
         <div className="sec-title">Log an outcome</div>
         <OutcomeChips big disabled={!me} onSave={save} />
+        {naForm && (
+          <div className="na-form">
+            <span className="hint"><b style={{ color: "var(--bright)" }}>Not available.</b> Reached someone, not the decision maker.</span>
+            <input className="field" autoFocus aria-label="Who you spoke with" placeholder="Who you spoke with (name)" value={naForm.spoke_with}
+              onChange={(e) => setNaForm({ ...naForm, spoke_with: e.target.value })} />
+            <input className="field" aria-label="Their role" placeholder="Their role, e.g. front desk" value={naForm.role}
+              onChange={(e) => setNaForm({ ...naForm, role: e.target.value })} />
+            <input className="field" aria-label="What they said" placeholder="What they said" value={naForm.said}
+              onChange={(e) => setNaForm({ ...naForm, said: e.target.value })} />
+            <input className="field" type="email" aria-label="Email they gave" placeholder="Email they gave (optional)" value={naForm.email}
+              onChange={(e) => setNaForm({ ...naForm, email: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && void saveNotAvailable()} />
+            {naMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{naMsg}</span>}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className="btn btn-gold" onClick={() => void saveNotAvailable()}>Save</button>
+              <button type="button" className="btn" onClick={() => setNaForm(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
         <div style={{ marginTop: 8 }}>
           {ex?.last_touch || ex?.project_id ? (
             <LatestOutcome existing={ex} memberName={memberName} />
@@ -399,16 +473,15 @@ export default function BusinessDetail({
           <div className="sec-title">Timeline</div>
           <ul className="timeline">
             {touches.map((t) => {
-              const c = classifyTouch(t);
               const m = t.meeting_note_id ? meetings[t.meeting_note_id] : null;
               if (m) {
                 const open = openMeeting === m.id;
                 return (
                   <li key={t.id} className="meeting">
-                    <span className={`st ${OUTCOME_CLASS.meeting}`}>Meeting</span> <b className="m-title">{m.title || "Untitled meeting"}</b>
-                    <div className="hint">
-                      {memberName(t.touched_by)} · <LocalDateTime iso={m.started_at ?? t.touched_at} />
-                    </div>
+                    <span className="touch-line">
+                      Met {shortDate(m.started_at ?? t.touched_at)} · <span className={`st ${OUTCOME_CLASS.meeting}`}>Meeting</span> ·{" "}
+                      <b className="m-title">{m.title || "Untitled meeting"}</b> · {memberName(t.touched_by)}
+                    </span>
                     {m.summary_md && (
                       <>
                         <div className={`m-summary${open ? " open" : ""}`}>{m.summary_md}</div>
@@ -428,10 +501,7 @@ export default function BusinessDetail({
               }
               return (
                 <li key={t.id}>
-                  <span className={`st ${OUTCOME_CLASS[c.key]}`}>{c.label}</span>{" "}
-                  <span className="hint">
-                    {memberName(t.touched_by)} · <LocalDateTime iso={t.touched_at} />
-                  </span>
+                  <TouchLine t={t} memberName={memberName} />
                   {t.summary && <div className="latest-note">“{t.summary}”</div>}
                 </li>
               );
@@ -564,6 +634,17 @@ export default function BusinessDetail({
             </span>
           ))}
         </div>
+      )}
+
+      {draftOpen && me && (
+        <DraftEmail
+          ctx={{ place: placeForScripts, ownerName, gatekeeper, senderName: me.name, bookingLink: me.booking_link }}
+          to={email}
+          onClose={() => setDraftOpen(false)}
+          onMarkSent={async (subject, to) => {
+            return (await doSave(outcomeByKey("emailed"), { summary: subject, details: to ? { to } : null })).error;
+          }}
+        />
       )}
 
       <BookCall

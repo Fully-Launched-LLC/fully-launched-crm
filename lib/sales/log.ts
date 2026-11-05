@@ -2,7 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import type { ExistingLead, ScannedPlace } from "@/lib/lead-finder/types";
 import { leadFromScan } from "@/lib/lead-finder/toLead";
 import { upsertLeads } from "@/lib/leads/upsert";
-import { resolveChannel, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
+import { resolveChannel, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
 
 // Writes from Sales (search rows, bulk bar, detail panel, audit page). Runs
 // in the browser, so RLS applies.
@@ -93,10 +93,14 @@ export async function logOutcome(
   meId: string,
   items: LogItem[],
   outcome: Outcome,
-  sourceDetail: string
+  sourceDetail: string,
+  // Not available form / Mark as sent: the note and structured details
+  // (migration 023), same for every item.
+  extra?: { summary?: string | null; details?: TouchDetails | null }
 ): Promise<LogResult> {
   const { records, failed } = await ensureRecords(supabase, meId, items, sourceDetail);
-  const keys = items.map((it) => it.key).filter((k) => records.has(k));
+  const keys = items.map((x) => x.key).filter((k) => records.has(k));
+  const it = (k: string) => items.find((x) => x.key === k);
   if (!keys.length) return { saved: [], failed };
 
   const { data, error } = await supabase
@@ -110,17 +114,24 @@ export async function logOutcome(
           direction: outcome.direction,
           outcome: outcome.outcome,
           touched_by: meId,
+          summary: extra?.summary?.trim() || null,
+          details:
+            outcome.key === "emailed" && !extra?.details
+              ? rec.email || it(k)?.place.emails[0]
+                ? { to: rec.email || it(k)!.place.emails[0] }
+                : null
+              : extra?.details ?? null,
         };
       })
     )
-    .select("id, lead_id, channel, direction, outcome, summary, touched_by, touched_at");
+    .select("id, lead_id, channel, direction, outcome, summary, touched_by, touched_at, details");
   if (error) {
     keys.forEach((k) => failed.push({ key: k, reason: error.message }));
     return { saved: [], failed };
   }
 
   const byLead = new Map<string, LatestTouch & { id: string }>();
-  (data ?? []).forEach((t) => byLead.set(t.lead_id, t as LatestTouch & { id: string }));
+  ((data ?? []) as unknown as (LatestTouch & { id: string; lead_id: string })[]).forEach((t) => byLead.set(t.lead_id, t));
   const saved: SavedOutcome[] = [];
   keys.forEach((k) => {
     const { existing: rec, created } = records.get(k)!;

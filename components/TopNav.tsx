@@ -8,6 +8,10 @@ import NavClock from "@/components/clock/NavClock";
 import UndoToast from "@/components/clock/UndoToast";
 import ClockOutDialog from "@/components/clock/ClockOutDialog";
 import { useTimeClock } from "@/components/clock/useTimeClock";
+import { useDueFollowUps } from "@/components/sales/useDueFollowUps";
+
+// Sales tab badge: my follow-ups due today or overdue; links to that list.
+const DUE_HREF = "/sales?view=history&due=1";
 
 // Nav-only labels; routes, branch values, and page headings are unchanged
 // (e.g. /projects/ai still says "AI").
@@ -31,6 +35,12 @@ export default function TopNav({
   const [menuOpen, setMenuOpen] = useState(false);
   const [projectsExpanded, setProjectsExpanded] = useState(false);
   const clock = useTimeClock(memberId);
+  const due = useDueFollowUps(memberId, pathname);
+  const dueBadge = due > 0 && (
+    <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-header-foreground px-1.5 text-[11px] font-semibold leading-5 text-header">
+      {due}
+    </span>
+  );
 
   // Branch list pages — these get the sub-tab row.
   const onProjects = pathname.startsWith("/projects/");
@@ -107,7 +117,8 @@ export default function TopNav({
         {tabs.map((tab) => (
           <Link
             key={tab.href}
-            href={tab.href}
+            href={tab.href === "/sales" && due > 0 ? DUE_HREF : tab.href}
+            title={tab.href === "/sales" && due > 0 ? `${due} follow-up${due === 1 ? "" : "s"} due` : undefined}
             className={`border-b-2 px-4 py-3 text-sm font-medium text-header-foreground transition-opacity ${
               isActive(tab.href)
                 ? "border-header-foreground opacity-100"
@@ -115,6 +126,7 @@ export default function TopNav({
             }`}
           >
             {tab.label}
+            {tab.href === "/sales" && dueBadge}
           </Link>
         ))}
         {memberId && (
@@ -249,11 +261,12 @@ export default function TopNav({
               ) : (
                 <Link
                   key={tab.href}
-                  href={tab.href}
+                  href={tab.href === "/sales" && due > 0 ? DUE_HREF : tab.href}
                   onClick={() => setMenuOpen(false)}
                   className={`px-4 ${mobileLinkClass(isActive(tab.href))}`}
                 >
                   {tab.label}
+                  {tab.href === "/sales" && dueBadge}
                 </Link>
               )
             )}
