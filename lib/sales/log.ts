@@ -134,8 +134,9 @@ function statusAfter(status: string, o: Outcome): string {
 }
 
 // Undo: delete the touches, then put each record back. A record this save
-// created is deleted if RLS allows (Admin); otherwise it stays, reset to
-// New with no touch. Returns the state each key should go back to (null:
+// created is deleted: RLS allows it for its creator within 10 minutes once
+// it has no touches (migration 019), and for Admins. If that's refused
+// (e.g. a teammate touched it meanwhile) it stays, reset to New. Returns the state each key should go back to (null:
 // no record any more).
 export async function undoOutcome(
   supabase: SupabaseClient,
