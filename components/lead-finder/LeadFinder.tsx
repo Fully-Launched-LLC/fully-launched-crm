@@ -12,7 +12,7 @@ import { OutcomeToastProvider } from "@/components/sales/OutcomeToast";
 import SalesSearches from "@/components/sales/SalesSearches";
 import { bodyFromRun, type RunBody } from "@/lib/sales/runBody";
 import { ECOM_MODE_NOTE, SEARCH_MODES, asMode, type SearchMode } from "@/lib/sales/searchModes";
-import { SessionExpiredError, apiFetch, readLastRun, writeLastRun } from "@/lib/lead-finder/apiFetch";
+import { SessionExpiredError, apiFetch, readLastPlace, readLastRun, writeLastPlace, writeLastRun } from "@/lib/lead-finder/apiFetch";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
 import type { LeadFinderRun, RunProgress, RunResult } from "@/lib/lead-finder/types";
@@ -46,6 +46,9 @@ const ALL_ON: Svc = { website: true, social: true, ecom: true, ai: true, service
 const FINISHED = ["done", "failed", "cancelled"];
 // A running run whose row hasn't changed in this long has no tab driving it.
 const STALL_MS = 75_000;
+
+const DEFAULT_PLACE = { state: "Illinois", city: "Wheaton", zip: "" };
+const CITY_OR_ZIP = "Enter a city or ZIP";
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const money = (n: number) => "$" + n.toFixed(2);
@@ -94,9 +97,19 @@ export default function LeadFinder({
   // Branch focus (lib/sales/searchModes.ts): what Mission Control includes
   // and how it ranks; also the default email / call script branch.
   const [focus, setFocus] = useState<SearchMode>("all");
-  const [state, setState] = useState("");
-  const [city, setCity] = useState("");
-  const [zip, setZip] = useState("");
+  // Defaults: Wheaton, Illinois. After this user's first search, their last
+  // searched state / city / ZIP instead (localStorage, set on launch).
+  const [state, setState] = useState(DEFAULT_PLACE.state);
+  const [city, setCity] = useState(DEFAULT_PLACE.city);
+  const [zip, setZip] = useState(DEFAULT_PLACE.zip);
+  useEffect(() => {
+    const last = readLastPlace(member?.id);
+    if (!last) return;
+    setState(last.state);
+    setCity(last.city);
+    setZip(last.zip);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [type, setType] = useState("");
   const [depth, setDepth] = useState<number>(20);
   const [radius, setRadius] = useState<number>(5);
@@ -157,6 +170,8 @@ export default function LeadFinder({
   }
 
   function validate(): string | null {
+    // Never search a whole state: a city or ZIP is required for both kinds.
+    if (!city.trim() && !zip.trim()) return CITY_OR_ZIP;
     if (mode === "search") {
       if (!state || !type.trim()) return "Choose a state and enter a business type to search.";
     } else {
@@ -362,6 +377,11 @@ export default function LeadFinder({
     setFormError(null);
     setTab("find");
     showView("launch");
+    if (!b.city?.trim() && !b.zip?.trim()) {
+      // An old run without a city or ZIP: fill the form, don't launch.
+      setMode(b.kind);
+      return setFormError(CITY_OR_ZIP);
+    }
     if (b.kind === "search") {
       setMode("search");
       setType(b.type);
@@ -410,6 +430,8 @@ export default function LeadFinder({
     setProgress(json.progress!);
     setRunUrl(json.run!.id);
     writeLastRun(member?.id, json.run!.id);
+    const b = body as { state?: string; city?: string; zip?: string };
+    if (b.state) writeLastPlace(member?.id, { state: b.state, city: b.city ?? "", zip: b.zip ?? "" });
     setDriving(true);
   }
 
@@ -720,12 +742,12 @@ export default function LeadFinder({
                     <Dropdown label="State" value={state} onChange={setState} placeholder="Choose a state" filter options={STATES.map((s) => ({ value: s, label: s }))} />
                   </div>
                   <label className="f">
-                    <span className="lt">City <em>optional</em></span>
-                    <input className="field" type="text" placeholder="Wheaton" value={city} onChange={(e) => setCity(e.target.value)} onKeyDown={onEnter} />
+                    <span className="lt">City <em>or ZIP</em></span>
+                    <input className="field" type="text" autoComplete="off" placeholder="Wheaton" value={city} onChange={(e) => setCity(e.target.value)} onKeyDown={onEnter} />
                   </label>
                   <label className="f">
-                    <span className="lt">Zip <em>optional</em></span>
-                    <input className="field" type="text" placeholder="60187" inputMode="numeric" maxLength={10} value={zip} onChange={(e) => setZip(e.target.value)} onKeyDown={onEnter} />
+                    <span className="lt">ZIP <em>or city</em></span>
+                    <input className="field" type="text" autoComplete="off" placeholder="60187" inputMode="numeric" maxLength={10} value={zip} onChange={(e) => setZip(e.target.value)} onKeyDown={onEnter} />
                   </label>
                 </div>
 

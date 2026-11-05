@@ -50,3 +50,26 @@ export function writeLastRun(memberId: string | null | undefined, runId: string)
     window.localStorage.setItem(key(memberId), runId);
   } catch {}
 }
+
+// Per-user last searched place (launch pad prefill after a search). Same
+// localStorage caveats as the last run: a convenience only.
+export type LastPlace = { state: string; city: string; zip: string };
+const placeKey = (memberId: string) => `lf:last_place:${memberId}`;
+
+export function readLastPlace(memberId: string | null | undefined): LastPlace | null {
+  if (!memberId) return null;
+  try {
+    const raw = window.localStorage.getItem(placeKey(memberId));
+    const p = raw ? (JSON.parse(raw) as Partial<LastPlace>) : null;
+    return p && typeof p.state === "string" ? { state: p.state, city: p.city ?? "", zip: p.zip ?? "" } : null;
+  } catch {
+    return null;
+  }
+}
+
+export function writeLastPlace(memberId: string | null | undefined, place: LastPlace) {
+  if (!memberId) return;
+  try {
+    window.localStorage.setItem(placeKey(memberId), JSON.stringify(place));
+  } catch {}
+}
