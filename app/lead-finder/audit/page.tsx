@@ -28,16 +28,21 @@ export default async function AuditPage({
 
   let saved: SavedAudit | null = null;
   let leadId: string | null = null;
-  let recordOwner: { name: string | null; edited: boolean } | null = null;
+  let recordOwner: { name: string | null; edited: boolean; linkedin: string | null; companyLinkedin: string | null } | null = null;
   if (searchParams.lead) {
     const { data } = await createClient()
       .from("leads")
-      .select("id, audit, contact_name, title")
+      .select("id, audit, contact_name, title, contact_linkedin, company_linkedin")
       .eq("id", searchParams.lead)
       .maybeSingle();
     if (data) {
       leadId = data.id;
-      recordOwner = { name: data.contact_name, edited: !!data.title && data.title !== "Possible owner" };
+      recordOwner = {
+        name: data.contact_name,
+        edited: !!data.title && data.title !== "Possible owner",
+        linkedin: data.contact_linkedin,
+        companyLinkedin: data.company_linkedin,
+      };
       const a = data.audit as SavedAudit | null;
       if (a && a.version === 1 && a.place) saved = a;
     }

@@ -9,6 +9,8 @@ import { buildRecommendations } from "@/lib/lead-finder/recommendations";
 import { buildCallScript, type PitchKey } from "@/lib/lead-finder/callScript";
 import { plausibleOwnerName } from "@/lib/lead-finder/ownerName";
 import { saveBusinessContact, zeroRowsReason } from "@/lib/sales/log";
+import { linkedinCompanySearch, linkedinPeopleSearch } from "@/lib/sales/owner";
+import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
 
 // Matteo's audit.html: call script (screen only), Google's PageSpeed scores,
 // snapshot, findings, recommendations, next step. Two requests instead of
@@ -58,7 +60,7 @@ export default function AuditReport({
   saved: SavedAudit | null;
   // The Sales record's contact name (the person at the business): edited =
   // a person typed it (title set, not the scanner's "Possible owner").
-  recordOwner: { name: string | null; edited: boolean } | null;
+  recordOwner: { name: string | null; edited: boolean; linkedin: string | null; companyLinkedin: string | null } | null;
 }) {
   const [leadId, setLeadId] = useState<string | null>(initialLeadId);
   const [part1, setPart1] = useState<Part1 | null>(
@@ -149,7 +151,7 @@ export default function AuditReport({
         place: L,
         searchType: type || null,
         existing: leadId
-          ? { id: leadId, company: L.name, contact_name: owner ?? null, title: null, email: null, phone: null, status: "new", owner: null, project_id: null, next_action: null, next_action_at: null, last_touch: null, matched_on: "google_place_id" }
+          ? { id: leadId, company: L.name, contact_name: owner ?? null, title: null, email: null, phone: null, contact_linkedin: null, company_linkedin: null, status: "new", owner: null, project_id: null, next_action: null, next_action_at: null, last_touch: null, matched_on: "google_place_id" }
           : null,
       },
       { contact_name: ownerEdit, title: ownerEdit.trim() ? "Owner" : null },
@@ -195,6 +197,7 @@ export default function AuditReport({
   }, [leadId, fromSaved, L, ranAt, speed]);
 
   const busy = !error && (!L || speed === "loading");
+  const companyLi = recordOwner?.companyLinkedin || L?.socialLinks?.LinkedIn || null;
 
   return (
     <div className="lfa">
@@ -226,6 +229,28 @@ export default function AuditReport({
             </span>
           ))}
           {ownerMsg && <span className="saved bad">{ownerMsg}</span>}
+          {L && (
+            <span className="li-links">
+              {recordOwner?.linkedin ? (
+                <a className="plain" href={recordOwner.linkedin} target="_blank" rel="noopener noreferrer">
+                  LinkedIn: {L.ownerName ?? "profile"}
+                </a>
+              ) : (
+                <a className="plain" href={linkedinPeopleSearch(L.ownerName, L.name)} target="_blank" rel="noopener noreferrer">
+                  Find {L.ownerName ? L.ownerName.split(" ")[0] : "the owner"} on LinkedIn
+                </a>
+              )}
+              {companyLi ? (
+                <a className="plain" href={companyLi} target="_blank" rel="noopener noreferrer">
+                  Company LinkedIn
+                </a>
+              ) : (
+                <a className="plain" href={linkedinCompanySearch(L.name)} target="_blank" rel="noopener noreferrer">
+                  Find company on LinkedIn
+                </a>
+              )}
+            </span>
+          )}
           {fromSaved && (
             <button type="button" className="plain" onClick={() => void run()}>
               Run again
@@ -290,7 +315,25 @@ function Report({
         "None listed on Google"
       ),
     ],
-    ["Social media", L.socials.length ? L.socials.join(", ") : hasSite ? "No links found on the website" : "Not checked"],
+    [
+      "Social media",
+      SOCIAL_PLATFORMS.some((p) => L.socialLinks?.[p]) ? (
+        <>
+          {SOCIAL_PLATFORMS.filter((p) => L.socialLinks?.[p]).map((p, i) => (
+            <span key={p}>
+              {i > 0 && " · "}
+              <a href={L.socialLinks?.[p] ?? undefined} target="_blank" rel="noopener noreferrer">{p}</a>
+            </span>
+          ))}
+        </>
+      ) : L.socials.length ? (
+        L.socials.join(", ")
+      ) : hasSite ? (
+        "No social links on their website"
+      ) : (
+        "Not checked"
+      ),
+    ],
     ["Online store", L.store ? L.store : hasSite ? "None found" : "Not checked"],
     ["Sells on", L.marketplaces === undefined ? "Not checked" : L.marketplaces.length ? L.marketplaces.join(", ") : hasSite ? "No marketplaces found" : "Not checked"],
     ["Online booking", L.hasBooking == null ? "Not checked" : L.hasBooking ? "Yes" : "None found"],

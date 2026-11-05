@@ -18,7 +18,17 @@ import {
 } from "@/lib/lead-finder/websiteScore";
 import { canEditLead } from "@/lib/leads/list";
 import { logOutcome, saveBusinessContact, zeroRowsReason } from "@/lib/sales/log";
-import { SCAN_TITLE, contactEmail, contactLabel, contactPhone, ownerNameOf } from "@/lib/sales/owner";
+import {
+  SCAN_TITLE,
+  companyLinkedin,
+  contactEmail,
+  contactLabel,
+  contactPhone,
+  linkedinCompanySearch,
+  linkedinPeopleSearch,
+  ownerNameOf,
+} from "@/lib/sales/owner";
+import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
 import { OUTCOME_CLASS, classifyTouch, outcomeByKey, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
 import { OutcomeChips, LatestOutcome } from "@/components/sales/OutcomeChips";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
@@ -47,7 +57,8 @@ function toLocalInput(iso: string | null): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-type Touch = LatestTouch & { id: string };
+type Touch = LatestTouch & { id: string; meeting_note_id: string | null };
+type Meeting = { id: string; title: string | null; started_at: string | null; summary_md: string | null; source_url: string | null };
 
 export default function BusinessDetail({
   r,
@@ -77,6 +88,8 @@ export default function BusinessDetail({
   const email = contactEmail(l, ex);
   const phone = contactPhone(l, ex);
   const placeForScripts = { ...l, ownerName, phone: phone ?? "No phone listed" };
+  const companyLi = companyLinkedin(l, ex);
+  const socialLinks = SOCIAL_PLATFORMS.filter((p) => p !== "LinkedIn" && l.socialLinks?.[p]).map((p) => [p, l.socialLinks![p]!] as const);
   const tel = phone ? phone.replace(/[^0-9+]/g, "") : "";
   const preview = "/api/lead-finder/preview?" + previewQuery({ ...placeForScripts, type: r.search_type || l.category });
   // His audit page (app/lead-finder/audit). With a record id the result is
@@ -124,27 +137,49 @@ export default function BusinessDetail({
   }, [l.id, l.website, l.webScore?.at]);
 
   // ---- Timeline ----
+  // Meetings (Granola, migration 022) are touches with a meeting_note_id.
   const [touches, setTouches] = useState<Touch[]>([]);
+  const [meetings, setMeetings] = useState<Record<string, Meeting>>({});
+  const [openMeeting, setOpenMeeting] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
   useEffect(() => {
     if (!ex?.id) {
       setTouches([]);
+      setMeetings({});
       return;
     }
     let live = true;
-    void supabase
-      .from("lead_touches")
-      .select("id, channel, direction, outcome, summary, touched_by, touched_at")
-      .eq("lead_id", ex.id)
-      .order("touched_at", { ascending: false })
-      .then(({ data }) => live && setTouches((data ?? []) as Touch[]));
+    void (async () => {
+      const { data } = await supabase
+        .from("lead_touches")
+        .select("id, channel, direction, outcome, summary, touched_by, touched_at, meeting_note_id")
+        .eq("lead_id", ex.id)
+        .order("touched_at", { ascending: false });
+      if (!live) return;
+      const list = (data ?? []) as Touch[];
+      setTouches(list);
+      const ids = list.map((t) => t.meeting_note_id).filter((id): id is string => !!id);
+      if (!ids.length) return setMeetings({});
+      const { data: notes } = await supabase
+        .from("meeting_notes")
+        .select("id, title, started_at, summary_md, source_url")
+        .in("id", ids);
+      if (live) setMeetings(Object.fromEntries(((notes ?? []) as Meeting[]).map((n) => [n.id, n])));
+    })();
     return () => {
       live = false;
     };
   }, [ex?.id, ex?.last_touch?.touched_at, ex?.last_touch?.summary, reload, supabase]);
 
   // ---- Contact (the person at the business): any team member ----
-  const [contactEdit, setContactEdit] = useState<{ contact_name: string; title: string; email: string; phone: string } | null>(null);
+  const [contactEdit, setContactEdit] = useState<{
+    contact_name: string;
+    title: string;
+    email: string;
+    phone: string;
+    contact_linkedin: string;
+    company_linkedin: string;
+  } | null>(null);
   const [contactMsg, setContactMsg] = useState<string | null>(null);
   function startContactEdit() {
     setContactMsg(null);
@@ -153,6 +188,8 @@ export default function BusinessDetail({
       title: ex?.title && ex.title !== SCAN_TITLE ? ex.title : "Owner",
       email: email ?? "",
       phone: phone ?? "",
+      contact_linkedin: ex?.contact_linkedin ?? "",
+      company_linkedin: companyLi ?? "",
     });
   }
   async function saveContact() {
@@ -363,6 +400,32 @@ export default function BusinessDetail({
           <ul className="timeline">
             {touches.map((t) => {
               const c = classifyTouch(t);
+              const m = t.meeting_note_id ? meetings[t.meeting_note_id] : null;
+              if (m) {
+                const open = openMeeting === m.id;
+                return (
+                  <li key={t.id} className="meeting">
+                    <span className={`st ${OUTCOME_CLASS.meeting}`}>Meeting</span> <b className="m-title">{m.title || "Untitled meeting"}</b>
+                    <div className="hint">
+                      {memberName(t.touched_by)} · <LocalDateTime iso={m.started_at ?? t.touched_at} />
+                    </div>
+                    {m.summary_md && (
+                      <>
+                        <div className={`m-summary${open ? " open" : ""}`}>{m.summary_md}</div>
+                        <button type="button" className="linkbtn" onClick={() => setOpenMeeting(open ? null : m.id)}>
+                          {open ? "Show less" : "Show full summary"}
+                        </button>
+                      </>
+                    )}
+                    {m.source_url && (
+                      <>
+                        {m.summary_md ? " · " : null}
+                        <a href={m.source_url} target="_blank" rel="noopener noreferrer">Open in Granola</a>
+                      </>
+                    )}
+                  </li>
+                );
+              }
               return (
                 <li key={t.id}>
                   <span className={`st ${OUTCOME_CLASS[c.key]}`}>{c.label}</span>{" "}
@@ -397,7 +460,11 @@ export default function BusinessDetail({
               <input className="field" type="email" aria-label="Email" placeholder="Email" value={contactEdit.email}
                 onChange={(e) => setContactEdit({ ...contactEdit, email: e.target.value })} />
               <input className="field" type="tel" aria-label="Phone" placeholder="Phone" value={contactEdit.phone}
-                onChange={(e) => setContactEdit({ ...contactEdit, phone: e.target.value })}
+                onChange={(e) => setContactEdit({ ...contactEdit, phone: e.target.value })} />
+              <input className="field" type="url" aria-label="Business owner's LinkedIn" placeholder="Their LinkedIn profile link" value={contactEdit.contact_linkedin}
+                onChange={(e) => setContactEdit({ ...contactEdit, contact_linkedin: e.target.value })} />
+              <input className="field" type="url" aria-label="Company LinkedIn" placeholder="Company LinkedIn page link" value={contactEdit.company_linkedin}
+                onChange={(e) => setContactEdit({ ...contactEdit, company_linkedin: e.target.value })}
                 onKeyDown={(e) => e.key === "Enter" && void saveContact()} />
               <div style={{ display: "flex", gap: 6 }}>
                 <button type="button" className="btn btn-gold" onClick={() => void saveContact()}>Save</button>
@@ -418,6 +485,40 @@ export default function BusinessDetail({
             <a href={l.website} target="_blank" rel="noopener noreferrer">Website</a>
           ) : (
             <span className="meta">No email or website found</span>
+          )}
+          <div className="li-row">
+            {ex?.contact_linkedin ? (
+              <a href={ex.contact_linkedin} target="_blank" rel="noopener noreferrer">LinkedIn: {ownerName ?? "profile"}</a>
+            ) : (
+              <a className="btn-mini" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">
+                Find {ownerName ? ownerName.split(" ")[0] : "the owner"} on LinkedIn
+              </a>
+            )}
+            {companyLi ? (
+              <a href={companyLi} target="_blank" rel="noopener noreferrer">Company LinkedIn</a>
+            ) : (
+              <a className="btn-mini" href={linkedinCompanySearch(l.name)} target="_blank" rel="noopener noreferrer">
+                Find company on LinkedIn
+              </a>
+            )}
+          </div>
+          <div>
+            {socialLinks.length ? (
+              <>
+                Social:{" "}
+                {socialLinks.map(([p, url], i) => (
+                  <span key={p}>
+                    {i > 0 && " · "}
+                    <a href={url} target="_blank" rel="noopener noreferrer">{p}</a>
+                  </span>
+                ))}
+              </>
+            ) : (
+              <span className="meta">{l.site || l.socialLinks ? "No social links on their website" : "Social links not checked"}</span>
+            )}
+          </div>
+          {!ex?.contact_linkedin && !companyLi && (
+            <span className="hint">Found them? Paste the links in Edit contact.</span>
           )}
         </div>
       </div>

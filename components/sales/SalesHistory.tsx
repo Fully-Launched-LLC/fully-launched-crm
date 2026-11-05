@@ -13,6 +13,7 @@ import { BRANCH_TAG, OUTCOMES, SALES_SOURCES, classifyTouch, type DisplayKey, ty
 import Dropdown from "@/components/lead-finder/Dropdown";
 import BusinessDetail from "@/components/sales/BusinessDetail";
 import { LatestOutcome } from "@/components/sales/OutcomeChips";
+import UnmatchedMeetings from "@/components/sales/UnmatchedMeetings";
 
 // Sales > History: every Sales business (leads with source in
 // SALES_SOURCES; legacy outreach never shows), latest outcome first.
@@ -161,6 +162,8 @@ export default function SalesHistory({
                     title: ex.title,
                     email: ex.email,
                     phone: ex.phone,
+                    contact_linkedin: ex.contact_linkedin,
+                    company_linkedin: ex.company_linkedin,
                   },
                   latest: ex.last_touch,
                 }
@@ -176,14 +179,17 @@ export default function SalesHistory({
 
   function exportCSV() {
     if (!visible.length) return;
-    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Next Action", "Next Action Date", "Phone", "Website", "Address", "Google Maps Link"];
+    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Next Action", "Next Action Date", "Phone", "Email", "Business Owner LinkedIn", "Company LinkedIn", "Instagram", "Facebook", "TikTok", "YouTube", "Website", "Address", "Google Maps Link"];
     const out = visible.map((r) => {
       const l = r.lead;
       const t = r.latest;
       const label = l.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
       const place = placeFromLead(l);
       return [l.company ?? l.name, ownerNameOf(place, { ...resultFromLead(l, t).existing! }) ?? "", l.title && l.title !== "Possible owner" ? l.title : "", l.owner ? memberName(l.owner) : "", label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
-        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.website ?? "", l.address ?? "", l.maps_url ?? ""];
+        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.email ?? "",
+        l.contact_linkedin ?? "", l.company_linkedin ?? place.socialLinks?.LinkedIn ?? "",
+        place.socialLinks?.Instagram ?? "", place.socialLinks?.Facebook ?? "", place.socialLinks?.TikTok ?? "", place.socialLinks?.YouTube ?? "",
+        l.website ?? "", l.address ?? "", l.maps_url ?? ""];
     });
     const csv = [headers, ...out].map((r) => r.map((c) => '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"').join(",")).join("\n");
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
@@ -214,6 +220,14 @@ export default function SalesHistory({
         </div>
       </div>
 
+      {(me?.role === "Admin" || me?.role === "Manager") && (
+        <UnmatchedMeetings
+          members={members}
+          businesses={(rows ?? []).map((r) => ({ id: r.lead.id, name: r.lead.company ?? r.lead.name, city: r.lead.city }))}
+          onLinked={() => void load()}
+        />
+      )}
+
       <div className="work">
         <section className="panel list" aria-label="History">
           <div className="toolbar">
@@ -229,6 +243,7 @@ export default function SalesHistory({
                   ...OUTCOMES.map((o) => ({ value: o.key, label: o.label })),
                   { value: "talked", label: "Called (talked), older" },
                   { value: "bad_fit", label: "Bad fit, older" },
+                  { value: "meeting", label: "Meeting held" },
                   { value: "moved", label: "Moved to Interested" },
                   { value: "none", label: "No outcome yet" },
                 ]}
@@ -302,7 +317,7 @@ export default function SalesHistory({
                           {r.latest || l.project_id ? (
                             <LatestOutcome
                               existing={{
-                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, email: l.email, phone: l.phone, status: l.status, owner: l.owner, project_id: l.project_id,
+                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, email: l.email, phone: l.phone, contact_linkedin: l.contact_linkedin, company_linkedin: l.company_linkedin, status: l.status, owner: l.owner, project_id: l.project_id,
                                 next_action: l.next_action, next_action_at: l.next_action_at, last_touch: r.latest, matched_on: "google_place_id",
                               }}
                               memberName={memberName}

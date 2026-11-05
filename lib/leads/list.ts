@@ -8,7 +8,7 @@ export const LEAD_LIST_COLUMNS =
   "industry, category, branch_fit, wheaton_alum, source, source_detail, external_ids, google_place_id, " +
   "maps_url, rating, review_count, website_status, lead_score, priority_score, uses_servicetitan, " +
   "audit_at, notes, status, found_by, owner, project_id, last_touch_at, next_action, next_action_at, " +
-  "created_at, updated_at";
+  "contact_linkedin, company_linkedin, created_at, updated_at";
 
 export type LeadListRow = Omit<Lead, "audit" | "scan_tags" | "contact_info" | "phone_digits">;
 

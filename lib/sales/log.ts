@@ -63,6 +63,8 @@ export async function ensureRecords(
           title: it.place.ownerName ? "Possible owner" : null,
           email: it.place.emails[0] ?? null,
           phone: it.place.phone && it.place.phone !== "No phone listed" ? it.place.phone : null,
+          contact_linkedin: null,
+          company_linkedin: it.place.socialLinks?.LinkedIn ?? null,
           status: "new",
           owner: o.result === "inserted" ? meId : null,
           project_id: null,
@@ -73,6 +75,15 @@ export async function ensureRecords(
         },
       });
     });
+    // Company LinkedIn from the website scan: upsert_lead doesn't know the
+    // 021 columns, so new records get it through update_business_contact.
+    await Promise.all(
+      Array.from(records.values())
+        .filter((r) => r.created && r.existing.company_linkedin)
+        .map((r) =>
+          supabase.rpc("update_business_contact", { p_lead_id: r.existing.id, p_fields: { company_linkedin: r.existing.company_linkedin } })
+        )
+    );
   }
   return { records, failed };
 }
@@ -185,7 +196,14 @@ export async function noteOutcome(supabase: SupabaseClient, saved: SavedOutcome[
 // only those four columns). Saves the business first if it has no record.
 // If the record was deleted meanwhile (a stale page), it is saved again from
 // the scan and the edit retried once.
-export type ContactFields = { contact_name?: string | null; title?: string | null; email?: string | null; phone?: string | null };
+export type ContactFields = {
+  contact_name?: string | null;
+  title?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  contact_linkedin?: string | null;
+  company_linkedin?: string | null;
+};
 
 export async function saveBusinessContact(
   supabase: SupabaseClient,
@@ -195,7 +213,11 @@ export async function saveBusinessContact(
   sourceDetail: string
 ): Promise<{ existing: ExistingLead | null; error: string | null }> {
   const clean: ContactFields = {};
-  (Object.keys(fields) as (keyof ContactFields)[]).forEach((k) => (clean[k] = (fields[k] ?? "").trim() || null));
+  (Object.keys(fields) as (keyof ContactFields)[]).forEach((k) => {
+    const v = (fields[k] ?? "").trim() || null;
+    // LinkedIn links pasted without the scheme.
+    clean[k] = v && (k === "contact_linkedin" || k === "company_linkedin") && !/^https?:\/\//i.test(v) ? "https://" + v : v;
+  });
 
   for (let attempt = 0; attempt < 2; attempt++) {
     const { records, failed } = await ensureRecords(
@@ -209,8 +231,19 @@ export async function saveBusinessContact(
     const { data, error } = await supabase.rpc("update_business_contact", { p_lead_id: rec.id, p_fields: clean });
     if (error?.code === "P0002" && attempt === 0) continue; // record gone: save it again, retry
     if (error) return { existing: rec, error: error.message };
-    const d = data as { contact_name: string | null; title: string | null; email: string | null; phone: string | null };
-    return { existing: { ...rec, contact_name: d.contact_name, title: d.title, email: d.email, phone: d.phone }, error: null };
+    const d = data as Pick<ExistingLead, "contact_name" | "title" | "email" | "phone" | "contact_linkedin" | "company_linkedin">;
+    return {
+      existing: {
+        ...rec,
+        contact_name: d.contact_name,
+        title: d.title,
+        email: d.email,
+        phone: d.phone,
+        contact_linkedin: d.contact_linkedin,
+        company_linkedin: d.company_linkedin,
+      },
+      error: null,
+    };
   }
   return { existing: null, error: "This business record no longer exists." };
 }

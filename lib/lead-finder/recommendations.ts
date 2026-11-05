@@ -38,8 +38,8 @@ export function buildRecommendations(lead: ScannedPlace, speed: PageSpeed | null
     recs.push({
       title: "Automate the office work with AI",
       why: st
-        ? "You use ServiceTitan. We’re building an AI tool for an HVAC company on ServiceTitan that turns vendor invoices into purchase orders automatically. Their office was spending about 16 hours a month entering them by hand."
-        : "Businesses like yours spend hours on calls, scheduling, quotes and paperwork. AI can answer common questions, book appointments and handle data entry, so your team spends that time on paying work.",
+        ? "You use ServiceTitan. We build AI tools that plug into ServiceTitan and take over the office paperwork: vendor invoices turned into purchase orders automatically, follow-ups on quotes and unpaid invoices, job and parts data entry, and reports. For Comfort x Design, an HVAC company on ServiceTitan, our purchase order reader does this on its own. Their office was spending about 16 hours a month typing invoices in by hand."
+        : "Businesses like yours lose hours every week to office paperwork. We build AI tools that plug into the software you already use and do that work for you: vendor invoices turned into purchase orders automatically, follow-ups on quotes and unpaid invoices, job and parts data entry, and reports. For Comfort x Design, an HVAC company, our purchase order reader saves their office about 16 hours a month.",
     });
   }
   // AI work is our highest-value service, so if it applies, put it near the top.

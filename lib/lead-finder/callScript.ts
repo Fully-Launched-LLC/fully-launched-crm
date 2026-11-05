@@ -63,8 +63,14 @@ const PLUG_INTO = ["ServiceTitan", "Housecall Pro", "Jobber"];
 function plugsInto(L: ScannedPlace): string | null {
   return PLUG_INTO.find((name) => (L.tech || []).some((t) => t.includes(name))) ?? null;
 }
+// Our AI offer is back-office automation that plugs into their software.
+// Never call answering or an AI receptionist.
+const BACK_OFFICE =
+  "vendor invoices turned into purchase orders automatically, follow-ups on quotes and unpaid invoices, job and parts data entry, and reports";
+const PO_EXAMPLE =
+  "For Comfort x Design, an HVAC company, our purchase order reader reads their vendor invoices and turns them into purchase orders on its own. Their office was spending about 16 hours a month typing those in by hand.";
 const PLUG_PITCH = (sw: string) =>
-  "We build AI tools that plug straight into " + sw + ": automatic follow-ups, quotes and invoices, answering calls and booking jobs, and reporting. It all runs inside the " + sw + " account you already have, so nobody has to learn a new system.";
+  "We build AI tools that plug straight into " + sw + " and take over the office paperwork: " + BACK_OFFICE + ". It all runs inside the " + sw + " account you already have, so nobody has to learn a new system, and your team just reviews and approves. " + PO_EXAMPLE;
 
 function firstName(full: string | null): string | null {
   return full ? full.split(" ")[0] : null;
@@ -106,17 +112,17 @@ export function buildCallScript(L: ScannedPlace, speed: PageSpeed | null, recomm
       opener: intro + " save time on office work. I noticed " + biz + " uses ServiceTitan. Is that right?",
       hook: "The reason I ask: we’re building an AI tool for another HVAC company on ServiceTitan that reads their vendor invoices and turns them into purchase orders automatically. Their office was spending about 16 hours a month typing those in by hand.",
       questions: ["How are vendor invoices getting into ServiceTitan today? Is someone typing them in?", "Roughly how many invoices or POs do you handle a month?", "What’s the most repetitive thing your office does every week?", "Who handles that, and what would they do with an extra two days a month?"],
-      pitch: "If any of that sounds familiar, we can probably connect AI directly to your ServiceTitan account so that work happens on its own. Your team just reviews and approves. " + PLUG_PITCH("ServiceTitan"),
+      pitch: PLUG_PITCH("ServiceTitan"),
       ...common,
     },
     ai: {
       label: "AI automation",
-      opener: intro + " cut down on phone and paperwork time using AI.",
-      hook: biz + " has " + L.reviews + " Google reviews, so you’re clearly busy" + (L.complaints && L.complaints.length ? ", and a couple of reviews mention trouble getting a callback or getting scheduled, which usually means the office is stretched" : "") + (L.hasBooking === false ? ". I also noticed there’s no way to book or request service online" : "") + ".",
-      questions: ["What eats the most time in your office each week: phones, scheduling, quotes, invoices?", "What software do you run the business on?" + (L.tech.length ? " ((Site suggests: " + L.tech.join(", ") + "))" : ""), "Do calls ever go to voicemail during busy times?", "If you could hand one task to an assistant tomorrow, what would it be?"],
+      opener: intro + " cut down on office paperwork using AI.",
+      hook: biz + " has " + L.reviews + " Google reviews, so you’re clearly busy" + (L.complaints && L.complaints.length ? ", and a couple of reviews mention billing or scheduling mix-ups, which usually means the office is stretched" : "") + ".",
+      questions: ["What eats the most time in your office each week: entering invoices, chasing quotes, job paperwork, reports?", "What software do you run the business on?" + (L.tech.length ? " ((Site suggests: " + L.tech.join(", ") + "))" : ""), "How do vendor invoices and parts costs get into your system today? Is someone typing them in?", "If you could hand one office task to an assistant tomorrow, what would it be?"],
       pitch: plugsInto(L)
         ? PLUG_PITCH(plugsInto(L)!)
-        : "We build AI tools that answer common questions, book appointments and handle data entry, plugged into the software you already use, so nobody has to learn a new system.",
+        : "We build AI tools that plug into the software you already use and take over the office paperwork: " + BACK_OFFICE + ". Your team just reviews and approves. " + PO_EXAMPLE,
       ...common,
     },
     website: {

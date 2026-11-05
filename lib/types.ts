@@ -134,6 +134,8 @@ export type Lead = {
   last_touch_at: string | null;
   next_action: string | null;
   next_action_at: string | null;
+  contact_linkedin: string | null; // migration 021
+  company_linkedin: string | null;
   updated_at: string;
 };
 

@@ -1,6 +1,6 @@
 import "server-only";
 import type { GooglePlace } from "@/lib/lead-finder/google";
-import type { ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks } from "@/lib/lead-finder/types";
+import type { ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks, SocialLinks, SocialPlatform } from "@/lib/lead-finder/types";
 import { extractCid } from "@/lib/lead-finder/cid";
 import { priorityScore } from "@/lib/lead-finder/priority";
 import { findOwnerName } from "@/lib/lead-finder/ownerName";
@@ -47,6 +47,42 @@ const SOCIAL_PATTERNS: Record<string, RegExp> = {
   YouTube: /youtube\.com\/(channel|c\/|@|user)/i,
   LinkedIn: /linkedin\.com\/(company|in)\//i,
 };
+
+// Profile URLs (not share buttons or posts), first match per platform.
+const SOCIAL_URL_PATTERNS: [SocialPlatform, RegExp][] = [
+  ["Instagram", /^https?:\/\/(?:www\.)?instagram\.com\/(?!p\/|reel\/|reels\/|explore|accounts|stories|sharer|share)[a-z0-9_.]+\/?$/i],
+  ["Facebook", /^https?:\/\/(?:www\.|m\.|business\.)?facebook\.com\/(?!sharer|share|dialog|plugins|tr\b|events\/|login|hashtag)(?:profile\.php\?id=\d+|pages\/[^?#]+|[a-z0-9_.-]+\/?)$/i],
+  ["TikTok", /^https?:\/\/(?:www\.)?tiktok\.com\/@[a-z0-9_.]+\/?$/i],
+  ["YouTube", /^https?:\/\/(?:www\.)?youtube\.com\/(?:channel\/[a-z0-9_-]+|c\/[^/?#]+|user\/[^/?#]+|@[^/?#]+)\/?$/i],
+  ["LinkedIn", /^https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/[^/?#]+\/?$/i],
+];
+
+// Drop tracking parameters and fragments; keep Facebook's profile id.
+function cleanSocialUrl(raw: string): string | null {
+  let u: URL;
+  try {
+    u = new URL(raw.replace(/&amp;/g, "&").trim());
+  } catch {
+    return null;
+  }
+  u.hash = "";
+  const keep = /facebook\.com$/i.test(u.hostname) && u.pathname === "/profile.php" ? u.searchParams.get("id") : null;
+  u.search = keep ? "?id=" + keep : "";
+  if (u.protocol === "http:") u.protocol = "https:";
+  return u.href.replace(/\/$/, "");
+}
+
+export function findSocialLinks(html: string): SocialLinks {
+  const out: SocialLinks = {};
+  for (const m of Array.from(html.matchAll(/href=["'](https?:\/\/[^"'\s]+)["']/gi))) {
+    const url = cleanSocialUrl(m[1]);
+    if (!url) continue;
+    for (const [platform, re] of SOCIAL_URL_PATTERNS) {
+      if (!out[platform] && re.test(url)) out[platform] = url;
+    }
+  }
+  return out;
+}
 
 const STORE_PATTERNS: [string, RegExp][] = [
   ["Shopify", /cdn\.shopify\.com|Shopify\.theme|myshopify\.com/i],
@@ -297,6 +333,7 @@ function looksLikeServiceBusiness(place: GooglePlace, searchType: string): boole
 
 type SiteInfo = {
   checks: SiteChecks;
+  socialLinks: SocialLinks;
   secure: boolean;
   mobileFriendly: boolean;
   copyrightYear: number | null;
@@ -313,6 +350,7 @@ type SiteInfo = {
 export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInfo {
   const result: SiteInfo = {
     checks: siteChecks(html, finalUrl),
+    socialLinks: findSocialLinks(html),
     secure: /^https:/i.test(finalUrl || ""),
     mobileFriendly: /<meta[^>]+name=["']?viewport/i.test(html),
     copyrightYear: null,
@@ -530,6 +568,7 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
           extra.socials.forEach((s) => {
             if (!info.socials.includes(s)) info.socials.push(s);
           });
+          info.socialLinks = { ...extra.socialLinks, ...info.socialLinks };
           extra.tech.forEach((t) => {
             if (!info.tech.includes(t)) info.tech.push(t);
           });
@@ -617,7 +656,7 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
   const aiReasons: string[] = [];
   if (aiIndustry) {
     aiPoints += 2;
-    aiReasons.push("Paperwork/phone-heavy industry");
+    aiReasons.push("Paperwork-heavy industry");
   }
   if (reviewCount >= 150) {
     aiPoints += 2;
@@ -702,5 +741,6 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     priority: priorityScore({ services, rating, reviews: reviewCount, score }),
     site: siteInfo ? siteInfo.checks : null,
     photos: (place.photos || []).length,
+    socialLinks: siteInfo ? siteInfo.socialLinks : {},
   };
 }

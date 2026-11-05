@@ -31,3 +31,17 @@ export function contactPhone(place: ScannedPlace, existing: ExistingLead | null)
   const p = existing?.phone ?? place.phone;
   return p && p !== "No phone listed" ? p : null;
 }
+
+export function companyLinkedin(place: ScannedPlace, existing: ExistingLead | null): string | null {
+  return existing?.company_linkedin ?? place.socialLinks?.LinkedIn ?? null;
+}
+
+// "Find on LinkedIn": a LinkedIn search in a new tab. No scraping: the
+// salesperson pastes the right profile back into Edit contact.
+export function linkedinPeopleSearch(ownerName: string | null, business: string): string {
+  const q = ownerName ? `${ownerName} ${business}` : business;
+  return "https://www.linkedin.com/search/results/people/?keywords=" + encodeURIComponent(q);
+}
+export function linkedinCompanySearch(business: string): string {
+  return "https://www.linkedin.com/search/results/companies/?keywords=" + encodeURIComponent(business);
+}

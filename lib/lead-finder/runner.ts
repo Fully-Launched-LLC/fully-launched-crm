@@ -405,6 +405,8 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
     title: string | null;
     email: string | null;
     phone: string | null;
+    contact_linkedin: string | null;
+    company_linkedin: string | null;
     status: string;
     owner: string | null;
     source: string | null;
@@ -417,7 +419,7 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await supabase
       .from("leads")
-      .select("id, company, contact_name, title, email, phone, status, owner, source, project_id, next_action, next_action_at")
+      .select("id, company, contact_name, title, email, phone, contact_linkedin, company_linkedin, status, owner, source, project_id, next_action, next_action_at")
       .in("id", ids.slice(i, i + 100))
       .in("source", SALES_SOURCES as unknown as string[]);
     if (error) throw new HttpError(500, error.message);
@@ -458,6 +460,8 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
           title: m.row.title,
           email: m.row.email,
           phone: m.row.phone,
+          contact_linkedin: m.row.contact_linkedin,
+          company_linkedin: m.row.company_linkedin,
           status: m.row.status,
           owner: m.row.owner,
           project_id: m.row.project_id,

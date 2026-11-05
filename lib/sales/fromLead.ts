@@ -26,6 +26,7 @@ type ScanTagsJson = {
   site?: ScannedPlace["site"];
   photos?: number;
   webScore?: ScannedPlace["webScore"];
+  socialLinks?: ScannedPlace["socialLinks"];
 };
 
 export function placeFromLead(l: SalesLeadRow): ScannedPlace {
@@ -63,6 +64,7 @@ export function placeFromLead(l: SalesLeadRow): ScannedPlace {
     site: s.site,
     photos: s.photos,
     webScore: s.webScore ?? null,
+    socialLinks: s.socialLinks ?? {},
   };
 }
 
@@ -74,6 +76,8 @@ export function existingFromLead(l: SalesLeadRow, latest: LatestTouch | null): E
     title: l.title,
     email: l.email,
     phone: l.phone,
+    contact_linkedin: l.contact_linkedin,
+    company_linkedin: l.company_linkedin,
     status: l.status,
     owner: l.owner,
     project_id: l.project_id,

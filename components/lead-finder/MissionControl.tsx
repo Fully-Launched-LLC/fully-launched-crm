@@ -183,7 +183,7 @@ export default function MissionControl({
     const list = onlyChecked ? checkedRows : visible;
     if (!list.length) return;
     const headers = ["Priority", "Website Score", "Need Score", "Business Name", "Category", "Address", "Phone", "Google Rating", "Reviews", "Website", "Website Status",
-      "Business Owner", "Assigned To", "Emails", "Contact Page", "Social Links Found", "Online Store Found", "Marketplaces", "Software Used", "Runs On", "Runs Ads",
+      "Business Owner", "Assigned To", "Emails", "Business Owner LinkedIn", "Company LinkedIn", "Contact Page", "Social Links Found", "Instagram", "Facebook", "TikTok", "YouTube", "Online Store Found", "Marketplaces", "Software Used", "Runs On", "Runs Ads",
       "Other Signals", "Services Needed", "Website Reasons", "Social Reasons", "E-commerce Reasons", "AI Reasons",
       "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Google Maps Link"];
     const rows = list.map((r) => {
@@ -191,7 +191,10 @@ export default function MissionControl({
       const t = r.existing?.last_touch ?? null;
       const outcome = r.existing?.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
       return [l.priority, websiteScore(l).score, l.score, l.name, l.category, l.address, l.phone, l.rating, l.reviews, l.website, l.websiteStatus,
-        ownerNameOf(l, r.existing) || "", r.existing?.owner ? memberName(r.existing.owner) : "", (l.emails || []).join("; "), l.contactPage || "", (l.socials || []).join("; "), l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
+        ownerNameOf(l, r.existing) || "", r.existing?.owner ? memberName(r.existing.owner) : "", (l.emails || []).join("; "),
+        r.existing?.contact_linkedin ?? "", r.existing?.company_linkedin ?? l.socialLinks?.LinkedIn ?? "",
+        l.contactPage || "", (l.socials || []).join("; "),
+        l.socialLinks?.Instagram ?? "", l.socialLinks?.Facebook ?? "", l.socialLinks?.TikTok ?? "", l.socialLinks?.YouTube ?? "", l.store || "", (l.marketplaces || []).join("; "), (l.tech || []).join("; "),
         fieldSoftware(l.tech).join("; ") || (l.usesServiceTitan ? "ServiceTitan" : ""), (l.ads || []).join("; "), (l.signals || []).join("; "), l.services.map((s) => GAP_LABELS[s]).join("; "),
         l.tags.website.join("; "), l.tags.social.join("; "), l.tags.ecom.join("; "), l.tags.ai.join("; "),
         outcome, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "", l.mapsUrl];

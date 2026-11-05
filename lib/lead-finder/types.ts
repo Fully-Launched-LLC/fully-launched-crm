@@ -56,7 +56,14 @@ export type ScannedPlace = {
   photos?: number; // Google profile photos (Places returns up to 10)
   // PageSpeed for the full website score, cached 30 days per website.
   webScore?: WebScoreCache | null;
+  // Profile URLs linked from their website: first per platform, tracking
+  // parameters removed. LinkedIn = company page only. Missing before Nov 5.
+  socialLinks?: SocialLinks;
 };
+
+export const SOCIAL_PLATFORMS = ["Instagram", "Facebook", "TikTok", "YouTube", "LinkedIn"] as const;
+export type SocialPlatform = (typeof SOCIAL_PLATFORMS)[number];
+export type SocialLinks = Partial<Record<SocialPlatform, string>>;
 
 export type SiteChecks = {
   https: boolean;
@@ -142,6 +149,8 @@ export type ExistingLead = {
   title: string | null; // "Possible owner" = scan guess; anything else was typed by a person
   email: string | null;
   phone: string | null;
+  contact_linkedin: string | null; // the business owner's / contact's profile
+  company_linkedin: string | null; // the business's company page
   status: string;
   owner: string | null;
   project_id: string | null;

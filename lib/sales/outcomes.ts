@@ -17,7 +17,7 @@ export type OutcomeKey = "no_answer" | "emailed" | "visited" | "interested" | "n
 // How a touch reads in rows, History and timelines. Includes outcomes the
 // buttons no longer log (Called (talked), Bad fit) so older touches still
 // show correctly.
-export type DisplayKey = OutcomeKey | "talked" | "bad_fit" | "other";
+export type DisplayKey = OutcomeKey | "talked" | "bad_fit" | "meeting" | "other";
 
 export type Outcome = {
   key: OutcomeKey;
@@ -66,7 +66,9 @@ export type LatestTouch = {
 export function classifyTouch(t: Pick<LatestTouch, "channel" | "outcome">): { key: DisplayKey; label: string } {
   const o = t.outcome;
   if (o === "meeting_booked") return { key: "booked_call", label: "Booked call" };
-  if (o === "interested" || o === "meeting_held") return { key: "interested", label: "Interested" };
+  // Meetings logged from Granola (migration 022): channel meeting, meeting_held.
+  if (o === "meeting_held") return { key: "meeting", label: "Meeting held" };
+  if (o === "interested") return { key: "interested", label: "Interested" };
   if (o === "not_interested") return { key: "not_interested", label: "Not interested" };
   if (o === "bad_fit") return { key: "bad_fit", label: "Bad fit" };
   if (t.channel === "voicemail" || (t.channel === "cold_call" && o === "no_answer")) return { key: "no_answer", label: "No answer" };
@@ -85,6 +87,7 @@ export const OUTCOME_CLASS: Record<DisplayKey | "moved", string> = {
   visited: "st-contacted",
   interested: "st-interested",
   booked_call: "st-interested",
+  meeting: "st-replied",
   not_interested: "st-nofit",
   bad_fit: "st-dead",
   moved: "st-converted",

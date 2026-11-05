@@ -71,6 +71,7 @@ export function leadFromScan(
       site: p.site ?? null,
       photos: p.photos ?? 0,
       webScore: p.webScore ?? null,
+      socialLinks: p.socialLinks ?? {},
     },
     lead_score: p.score,
     priority_score: p.priority,
