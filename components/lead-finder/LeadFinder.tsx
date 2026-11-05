@@ -9,11 +9,13 @@ import RocketStage, { type Phase } from "@/components/lead-finder/RocketStage";
 import MissionControl, { type Svc } from "@/components/lead-finder/MissionControl";
 import SalesHistory from "@/components/sales/SalesHistory";
 import { OutcomeToastProvider } from "@/components/sales/OutcomeToast";
+import { SaveSearchButton, SavedSearchesPanel } from "@/components/sales/SavedSearches";
+import { bodyFromRun, defaultSearchName, type RunBody, type SavedSearch } from "@/lib/sales/savedSearch";
 import LocalDateTime from "@/components/LocalDateTime";
 import { SessionExpiredError, apiFetch, readLastRun, writeLastRun } from "@/lib/lead-finder/apiFetch";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
-import type { LeadFinderRun, RunProgress, RunResult, SearchParams, SweepParams } from "@/lib/lead-finder/types";
+import type { LeadFinderRun, RunProgress, RunResult } from "@/lib/lead-finder/types";
 import {
   COST_PER_SEARCH,
   MAX_SWEEP_SEARCHES,
@@ -323,11 +325,7 @@ export default function LeadFinder({
       return;
     }
     setConfirmSweep(false);
-    launchWith(
-      mode === "search"
-        ? { kind: "search", state, city: city.trim(), zip: zip.trim(), type: type.trim(), depth, services: stOnly ? ["servicetitan"] : selectedServices }
-        : { kind: "sweep", state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText }
-    );
+    launchWith({ ...currentBody() });
   }
 
   function launchWith(body: Record<string, unknown>) {
@@ -341,12 +339,12 @@ export default function LeadFinder({
     void start(body); // the real search starts right away; the launch plays while it runs
   }
 
-  // "Re-run for fresh data" (results older than 7 days): the same search
-  // again, form filled in. A quick search launches right away; a sweep
-  // (Admin/Manager) opens its cost confirm on the launch pad first.
-  function rerun(r: LeadFinderRun) {
-    const p = r.params as SearchParams & SweepParams;
-    const services = p.services ?? [];
+  // Run a search again from its request body: "Re-run for fresh data"
+  // (results older than 7 days) and My saved searches. The form is filled
+  // in; a quick search launches right away, a sweep (Admin/Manager) opens
+  // its cost confirm on the launch pad first.
+  function runBody(b: RunBody) {
+    const services = b.services ?? [];
     const st = services.includes("servicetitan");
     const nextSvc: Svc = {
       website: !st && services.includes("website"),
@@ -355,26 +353,82 @@ export default function LeadFinder({
       ai: !st && services.includes("ai"),
       servicetitan: st,
     };
-    setState(p.state);
-    setCity(p.city ?? "");
-    setZip(p.zip ?? "");
+    setState(b.state);
+    setCity(b.city ?? "");
+    setZip(b.zip ?? "");
     setSvc(nextSvc);
     setFormError(null);
+    setTab("find");
     showView("launch");
-    if (r.kind === "search") {
+    if (b.kind === "search") {
       setMode("search");
-      setType(p.type);
-      setDepth(p.depth);
-      launchWith({ kind: "search", state: p.state, city: p.city, zip: p.zip, type: p.type, depth: p.depth, services });
+      setType(b.type);
+      setDepth(b.depth);
+      launchWith({ ...b });
     } else {
-      const text = (p.types ?? []).join("\n");
+      if (!canSweep) return setFormError("Area sweeps are for Admins and Managers.");
       setMode("sweep");
-      setRadius(p.radius);
+      setRadius(b.radius);
       setTypesEdited(true);
-      setTypesText(text);
+      setTypesText(b.types);
       resetStage();
-      setConfirmKey(sweepKey({ state: p.state, city: p.city ?? "", zip: p.zip ?? "", radius: p.radius, typesText: text, svc: nextSvc }));
+      setConfirmKey(sweepKey({ state: b.state, city: b.city ?? "", zip: b.zip ?? "", radius: b.radius, typesText: b.types, svc: nextSvc }));
     }
+  }
+  const rerun = (r: LeadFinderRun) => runBody(bodyFromRun(r));
+
+  // The search the console describes right now.
+  function currentBody(): RunBody {
+    return mode === "search"
+      ? { kind: "search", state, city: city.trim(), zip: zip.trim(), type: type.trim(), depth, services: stOnly ? ["servicetitan"] : selectedServices }
+      : { kind: "sweep", state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText };
+  }
+
+  // ---- My saved searches (migration 025, own rows) ----
+  const [saved, setSaved] = useState<SavedSearch[]>([]);
+  const loadSaved = useCallback(async () => {
+    if (!member) return;
+    const { data } = await createClient()
+      .from("saved_searches")
+      .select("*")
+      .eq("user_id", member.id)
+      .order("last_run_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false });
+    setSaved((data ?? []) as SavedSearch[]);
+  }, [member]);
+  useEffect(() => {
+    void loadSaved();
+  }, [loadSaved]);
+
+  async function saveSearch(name: string, body: RunBody): Promise<string | null> {
+    if (!member) return "You need a team member profile to save searches.";
+    if (body.kind === "search" && (!body.state || !body.type)) return "Choose a state and a business type first.";
+    if (body.kind === "sweep" && !(body.state && (body.city || body.zip))) return "A sweep needs a state plus a city or zip.";
+    const { error } = await createClient().from("saved_searches").insert({ name, kind: body.kind, params: body, user_id: member.id });
+    if (error) return error.code === "42501" ? "Only Admins and Managers can save sweeps." : error.message;
+    await loadSaved();
+    return null;
+  }
+
+  async function runSaved(s: SavedSearch) {
+    const at = new Date().toISOString();
+    setSaved((prev) => prev.map((x) => (x.id === s.id ? { ...x, last_run_at: at } : x)));
+    void createClient().from("saved_searches").update({ last_run_at: at }).eq("id", s.id);
+    runBody(s.params);
+  }
+
+  async function renameSaved(s: SavedSearch, name: string): Promise<string | null> {
+    const { error } = await createClient().from("saved_searches").update({ name }).eq("id", s.id);
+    if (error) return error.message;
+    setSaved((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)));
+    return null;
+  }
+
+  async function deleteSaved(s: SavedSearch): Promise<string | null> {
+    const { error } = await createClient().from("saved_searches").delete().eq("id", s.id);
+    if (error) return error.message;
+    setSaved((prev) => prev.filter((x) => x.id !== s.id));
+    return null;
   }
 
   async function start(body: Record<string, unknown>) {
@@ -786,12 +840,15 @@ export default function LeadFinder({
                         )} at list price. 60 businesses can take about a minute.`
                       : "Searches every type below across the whole area, removes duplicates and ranks everything together. Keep this tab open while it runs."}
                   </p>
+                  <SaveSearchButton defaultName={() => defaultSearchName(currentBody())} onSave={(name) => saveSearch(name, currentBody())} />
                   <button ref={launchRef} type="button" className="btn-launch" disabled={launching} onClick={onLaunch}>
                     {ROCKET_ICON}
                     <span>{launching ? "Launching…" : "Launch search"}</span>
                   </button>
                 </div>
               </div>
+
+              <SavedSearchesPanel items={saved} canSweep={canSweep} onRun={(x) => void runSaved(x)} onRename={renameSaved} onDelete={deleteSaved} />
 
               <div className="missions">
                 <span>Saved missions</span>
@@ -840,6 +897,8 @@ export default function LeadFinder({
             onToggleSvc={toggleSvc}
             onNewSearch={newSearch}
             onRerun={run.kind === "search" || canSweep ? () => rerun(run) : null}
+            onSaveSearch={run.kind === "search" || canSweep ? (name) => saveSearch(name, bodyFromRun(run)) : null}
+            defaultSearchName={() => defaultSearchName(bodyFromRun(run))}
           />
         </div>
       )}

@@ -29,8 +29,8 @@ import {
   ownerNameOf,
 } from "@/lib/sales/owner";
 import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
-import { OUTCOME_CLASS, outcomeByKey, shortDate, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
-import { OutcomeChips, LatestOutcome, TouchLine } from "@/components/sales/OutcomeChips";
+import { OUTCOME_CLASS, classifyTouch, outcomeByKey, shortDate, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
+import { OutcomeChips, LatestOutcome, TouchLine, stopNotice } from "@/components/sales/OutcomeChips";
 import DraftEmail from "@/components/sales/DraftEmail";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import ConvertDialog from "@/components/sales/ConvertDialog";
@@ -68,6 +68,7 @@ export default function BusinessDetail({
   onSaved,
   onRestored,
   onWebScore,
+  dossier = false,
 }: {
   r: RunResult;
   me: TeamMember | null;
@@ -77,6 +78,9 @@ export default function BusinessDetail({
   // After Undo: the record's state again (null: it no longer exists).
   onRestored: (existing: ExistingLead | null) => void;
   onWebScore: (w: WebScoreCache) => void;
+  // Audit page dossier: its own header (with Book a call) replaces the
+  // preview's header, actions and Book a call, and it runs PageSpeed itself.
+  dossier?: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const toast = useOutcomeToast();
@@ -104,7 +108,7 @@ export default function BusinessDetail({
   // ---- Full website score (background PageSpeed) ----
   const [scoreState, setScoreState] = useState<"idle" | "running" | "failed">("idle");
   useEffect(() => {
-    if (!hasRealSite(l) || freshWebScore(l)) return;
+    if (dossier || !hasRealSite(l) || freshWebScore(l)) return;
     const url = l.website;
     let live = true;
     setScoreState("running");
@@ -351,6 +355,8 @@ export default function BusinessDetail({
 
   return (
     <>
+      {!dossier && (
+        <>
       <div className="d-head">
         <div style={{ minWidth: 0 }}>
           <div className="kicker">Business</div>
@@ -404,110 +410,10 @@ export default function BusinessDetail({
         </button>
       </div>
 
-      <div>
-        <div className="sec-title">Log an outcome</div>
-        <OutcomeChips big disabled={!me} onSave={save} />
-        {liPrompt != null && (
-          <div className="li-prompt">
-            <span className="hint">
-              Paste {ownerName ? `${ownerName.split(" ")[0]}'s` : "the business owner's"} LinkedIn profile link so the team has it.
-            </span>
-            <input className="field" autoFocus type="url" aria-label="Business owner's LinkedIn profile" placeholder="https://www.linkedin.com/in/…"
-              value={liPrompt} onChange={(e) => setLiPrompt(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") void saveLinkedinPrompt();
-                if (e.key === "Escape") setLiPrompt(null);
-              }} />
-            {liMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{liMsg}</span>}
-            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-              <button type="button" className="btn btn-gold" onClick={() => void saveLinkedinPrompt()}>Save</button>
-              <a className="btn" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">Find on LinkedIn</a>
-              <button type="button" className="btn" onClick={() => setLiPrompt(null)}>Not now</button>
-            </div>
-          </div>
-        )}
-        {naForm && (
-          <div className="na-form">
-            <span className="hint"><b style={{ color: "var(--bright)" }}>Not available.</b> Reached someone, not the decision maker.</span>
-            <input className="field" autoFocus aria-label="Who you spoke with" placeholder="Who you spoke with (name)" value={naForm.spoke_with}
-              onChange={(e) => setNaForm({ ...naForm, spoke_with: e.target.value })} />
-            <input className="field" aria-label="Their role" placeholder="Their role, e.g. front desk" value={naForm.role}
-              onChange={(e) => setNaForm({ ...naForm, role: e.target.value })} />
-            <input className="field" aria-label="What they said" placeholder="What they said" value={naForm.said}
-              onChange={(e) => setNaForm({ ...naForm, said: e.target.value })} />
-            <input className="field" type="email" aria-label="Email they gave" placeholder="Email they gave (optional)" value={naForm.email}
-              onChange={(e) => setNaForm({ ...naForm, email: e.target.value })}
-              onKeyDown={(e) => e.key === "Enter" && void saveNotAvailable()} />
-            {naMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{naMsg}</span>}
-            <div style={{ display: "flex", gap: 6 }}>
-              <button type="button" className="btn btn-gold" onClick={() => void saveNotAvailable()}>Save</button>
-              <button type="button" className="btn" onClick={() => setNaForm(null)}>Cancel</button>
-            </div>
-          </div>
-        )}
-        <div style={{ marginTop: 8 }}>
-          {ex?.last_touch || ex?.project_id ? (
-            <LatestOutcome existing={ex} memberName={memberName} />
-          ) : (
-            <p className="hint">No one has contacted this business yet.</p>
-          )}
-          {ex && <p className="hint" style={{ marginTop: 4 }}>Assigned to: {ex.owner ? memberName(ex.owner) : "nobody yet"}</p>}
-        </div>
-      </div>
-
-      {ex && (
-        <div>
-          <div className="sec-title">Next action</div>
-          <div className="next-form">
-            <input
-              className="field"
-              aria-label="Next action"
-              placeholder="Call back Tuesday…"
-              value={nextText}
-              disabled={!canEdit}
-              onChange={(e) => setNextText(e.target.value)}
-            />
-            <input
-              className="field"
-              type="datetime-local"
-              aria-label="Next action date"
-              value={nextAt}
-              disabled={!canEdit}
-              onChange={(e) => setNextAt(e.target.value)}
-            />
-            <button type="button" className="btn" disabled={!canEdit} onClick={() => void saveNext()}>
-              Save
-            </button>
-          </div>
-          {!canEdit && <p className="hint" style={{ marginTop: 4 }}>{RLS_HINT}</p>}
-          {nextMsg && <p className={`hint ${nextMsg.tone === "error" ? "bad-text" : ""}`} style={{ marginTop: 4 }}>{nextMsg.text}</p>}
-        </div>
+        </>
       )}
 
-      {ex && (
-        <div>
-          {ex.project_id ? (
-            <a className="btn" style={{ width: "100%" }} href={`/project/${ex.project_id}`}>
-              Open project
-            </a>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="btn btn-gold"
-                style={{ width: "100%", minHeight: 44 }}
-                disabled={!canEdit || !me}
-                onClick={() => void openConvert(ex.id)}
-              >
-                Move to Interested
-              </button>
-              {!canEdit && <p className="hint" style={{ marginTop: 4 }}>{RLS_HINT}</p>}
-            </>
-          )}
-          {convertError && <p className="error" style={{ marginTop: 6 }}>{convertError}</p>}
-        </div>
-      )}
-
+      {/* Order: header, actions, timeline, contact, log an outcome, book a call; then the scan findings. */}
       {touches.length > 0 && (
         <div>
           <div className="sec-title">Timeline</div>
@@ -634,6 +540,126 @@ export default function BusinessDetail({
       </div>
 
       <div>
+        <div className="sec-title">Log an outcome</div>
+        <OutcomeChips
+          big
+          disabled={!me}
+          confirm={stopNotice(ex)}
+          current={ex?.last_touch && !ex.project_id ? classifyTouch(ex.last_touch).key : null}
+          onSave={save}
+        />
+        {liPrompt != null && (
+          <div className="li-prompt">
+            <span className="hint">
+              Paste {ownerName ? `${ownerName.split(" ")[0]}'s` : "the business owner's"} LinkedIn profile link so the team has it.
+            </span>
+            <input className="field" autoFocus type="url" aria-label="Business owner's LinkedIn profile" placeholder="https://www.linkedin.com/in/…"
+              value={liPrompt} onChange={(e) => setLiPrompt(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void saveLinkedinPrompt();
+                if (e.key === "Escape") setLiPrompt(null);
+              }} />
+            {liMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{liMsg}</span>}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+              <button type="button" className="btn btn-gold" onClick={() => void saveLinkedinPrompt()}>Save</button>
+              <a className="btn" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">Find on LinkedIn</a>
+              <button type="button" className="btn" onClick={() => setLiPrompt(null)}>Not now</button>
+            </div>
+          </div>
+        )}
+        {naForm && (
+          <div className="na-form">
+            <span className="hint"><b style={{ color: "var(--bright)" }}>Not available.</b> Reached someone, not the decision maker.</span>
+            <input className="field" autoFocus aria-label="Who you spoke with" placeholder="Who you spoke with (name)" value={naForm.spoke_with}
+              onChange={(e) => setNaForm({ ...naForm, spoke_with: e.target.value })} />
+            <input className="field" aria-label="Their role" placeholder="Their role, e.g. front desk" value={naForm.role}
+              onChange={(e) => setNaForm({ ...naForm, role: e.target.value })} />
+            <input className="field" aria-label="What they said" placeholder="What they said" value={naForm.said}
+              onChange={(e) => setNaForm({ ...naForm, said: e.target.value })} />
+            <input className="field" type="email" aria-label="Email they gave" placeholder="Email they gave (optional)" value={naForm.email}
+              onChange={(e) => setNaForm({ ...naForm, email: e.target.value })}
+              onKeyDown={(e) => e.key === "Enter" && void saveNotAvailable()} />
+            {naMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{naMsg}</span>}
+            <div style={{ display: "flex", gap: 6 }}>
+              <button type="button" className="btn btn-gold" onClick={() => void saveNotAvailable()}>Save</button>
+              <button type="button" className="btn" onClick={() => setNaForm(null)}>Cancel</button>
+            </div>
+          </div>
+        )}
+        <div style={{ marginTop: 8 }}>
+          {ex?.last_touch || ex?.project_id ? (
+            <LatestOutcome existing={ex} memberName={memberName} />
+          ) : (
+            <p className="hint">No one has contacted this business yet.</p>
+          )}
+          {ex && <p className="hint" style={{ marginTop: 4 }}>Assigned to: {ex.owner ? memberName(ex.owner) : "nobody yet"}</p>}
+        </div>
+      </div>
+
+      {ex && (
+        <div>
+          <div className="sec-title">Next action</div>
+          <div className="next-form">
+            <input
+              className="field"
+              aria-label="Next action"
+              placeholder="Call back Tuesday…"
+              value={nextText}
+              disabled={!canEdit}
+              onChange={(e) => setNextText(e.target.value)}
+            />
+            <input
+              className="field"
+              type="datetime-local"
+              aria-label="Next action date"
+              value={nextAt}
+              disabled={!canEdit}
+              onChange={(e) => setNextAt(e.target.value)}
+            />
+            <button type="button" className="btn" disabled={!canEdit} onClick={() => void saveNext()}>
+              Save
+            </button>
+          </div>
+          {!canEdit && <p className="hint" style={{ marginTop: 4 }}>{RLS_HINT}</p>}
+          {nextMsg && <p className={`hint ${nextMsg.tone === "error" ? "bad-text" : ""}`} style={{ marginTop: 4 }}>{nextMsg.text}</p>}
+        </div>
+      )}
+
+      {ex && (
+        <div>
+          {ex.project_id ? (
+            <a className="btn" style={{ width: "100%" }} href={`/project/${ex.project_id}`}>
+              Open project
+            </a>
+          ) : (
+            <>
+              <button
+                type="button"
+                className="btn btn-gold"
+                style={{ width: "100%", minHeight: 44 }}
+                disabled={!canEdit || !me}
+                onClick={() => void openConvert(ex.id)}
+              >
+                Move to Interested
+              </button>
+              {!canEdit && <p className="hint" style={{ marginTop: 4 }}>{RLS_HINT}</p>}
+            </>
+          )}
+          {convertError && <p className="error" style={{ marginTop: 6 }}>{convertError}</p>}
+        </div>
+      )}
+
+      {!dossier && (
+        <BookCall
+          members={members}
+          name={ownerName}
+          email={email}
+          onBooked={() => void save(outcomeByKey("booked_call"))}
+        />
+
+      )}
+
+      <div>
         <div className="sec-title">What they need</div>
         {SERVICE_ORDER.filter((s) => l.services.includes(s)).map((s) => (
           <div key={s} className={`need ${s}`}>
@@ -686,13 +712,6 @@ export default function BusinessDetail({
           }}
         />
       )}
-
-      <BookCall
-        members={members}
-        name={ownerName}
-        email={email}
-        onBooked={() => void save(outcomeByKey("booked_call"))}
-      />
 
       {convert &&
         me &&

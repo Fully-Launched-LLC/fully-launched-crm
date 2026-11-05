@@ -10,7 +10,7 @@ import type { PageSpeed, Recommendation, ScannedPlace } from "@/lib/lead-finder/
  * Screen only. Never part of anything sent to the business.
  */
 
-export type PitchKey = "servicetitan" | "ai" | "website" | "ecom" | "social";
+export type PitchKey = "servicetitan" | "ai" | "website" | "ecom" | "social" | "general";
 
 export type Pitch = {
   label: string;
@@ -142,6 +142,22 @@ export function buildCallScript(L: ScannedPlace, speed: PageSpeed | null, recomm
           : ecomHook(L),
       questions: ["How much of your business comes from online orders right now?", "Have you thought about selling on Etsy, Amazon or Faire?", "Who handles product photos and listings today?"],
       pitch: "We set up and optimize online stores and marketplace listings (photos, descriptions, the works) so your products sell while the shop is closed.",
+      ...common,
+    },
+    general: {
+      label: "General",
+      opener: intro + " get more customers and spend less time on office work.",
+      hook:
+        (L.rating !== "N/A" && L.reviews ? biz + " has a " + L.rating + "-star rating from " + L.reviews + " Google reviews, so customers clearly like your work. " : "") +
+        "I was looking you up and noticed " + ((L.tags.website[0] || L.tags.social[0] || L.tags.ecom[0] || L.tags.ai[0] || "a few things that could be bringing in more business").toLowerCase()) + ".",
+      questions: [
+        "Where do most of your new customers find you right now?",
+        "Besides the actual work, what takes up the most time in your week?",
+        "What software do you run the business on?" + (L.tech.length ? " ((Site suggests: " + L.tech.join(", ") + "))" : ""),
+        "If you could fix one thing about how customers find or reach you, what would it be?",
+      ],
+      pitch:
+        "Depending on what you need, we build fast websites, run social media, set up and improve online sales, and build AI tools that plug into your software and take over office paperwork, like turning vendor invoices into purchase orders. We start with whatever makes the biggest difference for you.",
       ...common,
     },
     social: {

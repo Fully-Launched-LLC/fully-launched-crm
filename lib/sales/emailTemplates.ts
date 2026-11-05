@@ -9,13 +9,14 @@ import { fieldSoftware } from "@/lib/lead-finder/websiteScore";
 // em-dashes. AI is back-office automation only (never call answering), with
 // the Comfort x Design invoice-to-PO tool as the example.
 
-export type EmailKind = ServiceKey; // "ai" | "website" | "social" | "ecom"
+export type EmailKind = ServiceKey | "general"; // "ai" | "website" | "social" | "ecom" | "general"
 
 export const EMAIL_KINDS: [EmailKind, string][] = [
   ["ai", "AI / back office"],
   ["website", "Website"],
-  ["social", "Social"],
+  ["social", "Social media"],
   ["ecom", "E-commerce"],
+  ["general", "General intro"],
 ];
 
 export type EmailContext = {
@@ -44,7 +45,7 @@ export function defaultEmailKind(p: ScannedPlace): EmailKind {
 const first = (name: string | null) => (name ? name.trim().split(/\s+/)[0] : null);
 
 function gaps(p: ScannedPlace, kind: EmailKind): string[] {
-  const own = p.tags[kind] ?? [];
+  const own = kind === "general" ? [] : p.tags[kind] ?? [];
   const rest = SERVICE_ORDER.filter((s) => s !== kind).flatMap((s) => (p.services.includes(s) ? p.tags[s] ?? [] : []));
   return [...own, ...rest].slice(0, 2).map((g) => g.replace(/\s*\u2014\s*/g, ", "));
 }
@@ -112,6 +113,21 @@ export function buildEmail(kind: EmailKind, ctx: EmailContext): { subject: strin
       ...sign
     );
     return { subject: `Getting ${biz} in front of more local customers`, body: lines.join("\n") };
+  }
+
+  if (kind === "general") {
+    lines.push(
+      `I'm ${ctx.senderName} with FullyLaunched, a local agency.` +
+        (rated ? ` ${biz} has a ${p.rating}-star rating from ${p.reviews} Google reviews, so customers clearly like your work.` : ""),
+      ""
+    );
+    lines.push(...gapBlock);
+    lines.push(
+      "We help businesses like yours get more customers and spend less time on office work: fast websites, social media, online sales, and AI tools that plug into the software you already use and take over paperwork like turning vendor invoices into purchase orders. " +
+        ask,
+      ...sign
+    );
+    return { subject: `A few ideas for ${biz}`, body: lines.join("\n") };
   }
 
   // ecom

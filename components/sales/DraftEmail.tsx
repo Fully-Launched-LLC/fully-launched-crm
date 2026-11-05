@@ -13,10 +13,13 @@ import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 export default function DraftEmail({
   ctx,
   to: initialTo,
+  inline = false,
   onClose,
   onMarkSent,
 }: {
   ctx: EmailContext;
+  // Audit dossier: shown in the page (no overlay, no close), stays after Mark as sent.
+  inline?: boolean;
   to: string | null;
   onClose: () => void;
   onMarkSent: (subject: string, to: string) => Promise<string | null>;
@@ -52,18 +55,17 @@ export default function DraftEmail({
     const err = await onMarkSent(subject.trim(), to.trim());
     setBusy(false);
     if (err) setError(err);
-    else onClose();
+    else if (!inline) onClose();
   }
 
-  return (
-    <div className="draft-overlay" role="dialog" aria-modal="true" aria-label="Draft email" onClick={onClose}>
-      <div className="panel draft" onClick={(e) => e.stopPropagation()}>
+  const panel = (
+      <div className={inline ? "draft inline" : "panel draft"} onClick={(e) => e.stopPropagation()}>
         <div className="draft-head">
           <div>
-            <div className="kicker">Draft email</div>
+            <div className="kicker">{inline ? "Email drafts" : "Draft email"}</div>
             <h3>{ctx.place.name}</h3>
           </div>
-          <button type="button" className="btn oc-toast-x" aria-label="Close" onClick={onClose}>×</button>
+          {!inline && <button type="button" className="btn oc-toast-x" aria-label="Close" onClick={onClose}>×</button>}
         </div>
         <div className="chips" role="group" aria-label="Template">
           {EMAIL_KINDS.map(([k, label]) => (
@@ -95,6 +97,12 @@ export default function DraftEmail({
           </button>
         </div>
       </div>
+  );
+
+  if (inline) return panel;
+  return (
+    <div className="draft-overlay" role="dialog" aria-modal="true" aria-label="Draft email" onClick={onClose}>
+      {panel}
     </div>
   );
 }

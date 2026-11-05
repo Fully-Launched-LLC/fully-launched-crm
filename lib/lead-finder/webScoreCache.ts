@@ -31,6 +31,7 @@ export function toCache(url: string, speed: PageSpeed): WebScoreCache | null {
       seo: speed.seo ?? null,
       accessibility: speed.accessibility ?? null,
       bestPractices: speed.bestPractices ?? null,
+      loadTime: speed.loadTime ?? null,
     },
   };
 }

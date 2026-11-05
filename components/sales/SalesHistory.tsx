@@ -263,7 +263,6 @@ export default function SalesHistory({
                   { value: "all", label: "Outcome: all" },
                   ...OUTCOMES.map((o) => ({ value: o.key, label: o.label })),
                   { value: "talked", label: "Called (talked), older" },
-                  { value: "visited", label: "Visited, older" },
                   { value: "bad_fit", label: "Bad fit, older" },
                   { value: "meeting", label: "Meeting held" },
                   { value: "moved", label: "Moved to Interested" },

@@ -26,7 +26,8 @@ export const FIELD_MASK = [
   "places.primaryTypeDisplayName",
   "places.businessStatus",
   "places.reviews",
-  "places.photos", // counted for the website score (profile completeness)
+  "places.photos", // counted for the Google profile score
+  "places.editorialSummary", // Google profile: business description present
   "nextPageToken",
 ].join(",");
 
@@ -44,8 +45,9 @@ export type GooglePlace = {
   types?: string[];
   primaryTypeDisplayName?: { text?: string };
   businessStatus?: string;
-  reviews?: { text?: { text?: string }; originalText?: { text?: string } }[];
+  reviews?: { text?: { text?: string }; originalText?: { text?: string }; publishTime?: string }[];
   photos?: unknown[];
+  editorialSummary?: { text?: string };
   location?: LatLng;
 };
 

@@ -1,6 +1,6 @@
 import "server-only";
 import type { GooglePlace } from "@/lib/lead-finder/google";
-import type { ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks, SocialLinks, SocialPlatform } from "@/lib/lead-finder/types";
+import type { GbpInfo, ScanTags, ScannedPlace, ServiceKey, ShopifyInfo, SiteChecks, SocialLinks, SocialPlatform } from "@/lib/lead-finder/types";
 import { extractCid } from "@/lib/lead-finder/cid";
 import { priorityScore } from "@/lib/lead-finder/priority";
 import { findOwnerName } from "@/lib/lead-finder/ownerName";
@@ -347,9 +347,9 @@ type SiteInfo = {
 };
 
 /** Look through the page code for clues. */
-export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInfo {
+export function analyzeHtml(html: string, finalUrl: string | undefined, city?: string | null): SiteInfo {
   const result: SiteInfo = {
-    checks: siteChecks(html, finalUrl),
+    checks: siteChecks(html, finalUrl, city),
     socialLinks: findSocialLinks(html),
     secure: /^https:/i.test(finalUrl || ""),
     mobileFriendly: /<meta[^>]+name=["']?viewport/i.test(html),
@@ -392,7 +392,16 @@ export function analyzeHtml(html: string, finalUrl: string | undefined): SiteInf
 // Website score inputs (lib/lead-finder/websiteScore.ts).
 const SCHEMA_TYPE_RE = /"@type"\s*:\s*(?:\[[^\]]*\]|"[^"]*")/gi;
 const LOCAL_SCHEMA_RE = /LocalBusiness|Organization|Corporation|HVACBusiness|Plumber|Electrician|RoofingContractor|HomeAndConstructionBusiness|GeneralContractor|ProfessionalService|AutoRepair|Dentist|MedicalBusiness|Restaurant|Store|LegalService|Attorney|AccountingService|BeautySalon|HairSalon|HealthAndBeautyBusiness/;
-function siteChecks(html: string, finalUrl: string | undefined): SiteChecks {
+// Fields the business schema should carry (AEO: LocalBusiness completeness).
+const SCHEMA_FIELDS: [string, RegExp][] = [
+  ["name", /"name"\s*:/],
+  ["address", /"address"\s*:/],
+  ["telephone", /"telephone"\s*:/],
+  ["openingHours", /"openingHours(?:Specification)?"\s*:/],
+  ["url", /"url"\s*:/],
+];
+
+function siteChecks(html: string, finalUrl: string | undefined, city?: string | null): SiteChecks {
   const jsonLd = Array.from(html.matchAll(/<script[^>]+application\/ld\+json[^>]*>([\s\S]*?)<\/script>/gi)).map((m) => m[1]).join(" ");
   const types = (jsonLd.match(SCHEMA_TYPE_RE) || []).join(" ");
   const micro = (html.match(/itemtype=["'][^"']*schema\.org\/(\w+)/gi) || []).join(" ");
@@ -405,7 +414,52 @@ function siteChecks(html: string, finalUrl: string | undefined): SiteChecks {
     h1: /<h1[\s>][\s\S]*?<\/h1>/i.test(html),
     localSchema: LOCAL_SCHEMA_RE.test(types) || LOCAL_SCHEMA_RE.test(micro),
     faqSchema: /FAQPage/.test(types) || /FAQPage/i.test(micro),
+    schemaFields: LOCAL_SCHEMA_RE.test(types) ? SCHEMA_FIELDS.filter(([, re]) => re.test(jsonLd)).map(([k]) => k) : [],
+    // 3+ distinct internal links that name a service (/ac-repair,
+    // /services/drain-cleaning, /furnace-maintenance), or a "Services" heading/menu.
+    servicesList:
+      new Set(
+        Array.from(html.matchAll(/href=["']((?:https?:\/\/[^"'\/]+)?\/[^"'#?\s]*(?:service|repair|install|replace|maintenance|cleaning|what-we-do)[^"'#?\s]*)["']/gi))
+          .map((m) => m[1].replace(/^https?:\/\/[^/]+/i, "").toLowerCase())
+          .filter((h) => !/schedul|book|request|contact|area/.test(h))
+      ).size >= 3 || /<(?:h[1-4]|a)[^>]*>\s*(?:our\s+)?services\s*</i.test(html),
+    serviceArea: (() => {
+      const text = html.replace(/<script[\s\S]*?<\/script>|<style[\s\S]*?<\/style>|<[^>]+>/gi, " ");
+      return /\b(?:proudly\s+serving|service\s+areas?|areas?\s+we\s+serve|we\s+serve)\b/i.test(text) ||
+        (!!city && city.length > 2 && new RegExp("\\b" + city.replace(/[.*+?^${}()|[\]\\]/g, "\\$&") + "\\b", "i").test(text));
+    })(),
+    imageCount: (html.match(/<img\b/gi) || []).length,
+    sitemap: null,
   };
+}
+
+/** Google Business Profile details (description, newest review, categories). */
+function gbpInfo(place: GooglePlace): GbpInfo {
+  const times = (place.reviews || []).map((r) => r.publishTime).filter((t): t is string => !!t).sort();
+  const cats = [
+    place.primaryTypeDisplayName?.text,
+    ...(place.types || [])
+      .filter((t) => !["point_of_interest", "establishment"].includes(t))
+      .map((t) => t.replace(/_/g, " ")),
+  ].filter((c): c is string => !!c);
+  return {
+    description: !!place.editorialSummary?.text?.trim(),
+    latestReviewAt: times.length ? times[times.length - 1] : null,
+    categories: Array.from(new Set(cats.map((c) => c.toLowerCase()))),
+  };
+}
+
+/** /sitemap.xml on their site (short timeout; null when it can't be checked). */
+async function hasSitemap(siteUrl: string, ctx?: ScanContext): Promise<boolean | null> {
+  let url: string;
+  try {
+    url = new URL("/sitemap.xml", siteUrl).href;
+  } catch {
+    return null;
+  }
+  const r = await fetchHomepageOnce(url, 5000, ctx);
+  if (r.timedOut || (!r.ok && !r.status)) return null;
+  return !!r.ok && !!r.html && /<(?:urlset|sitemapindex)\b/i.test(r.html);
 }
 
 /** Strip page code down to readable text. */
@@ -537,7 +591,9 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
       siteStatus = "Broken";
       tags.website.push(page.error || "Site returned an error (" + page.status + ")");
     } else {
-      const info = analyzeHtml(page.html, page.finalUrl);
+      const city = (place.formattedAddress || "").split(",").map((x) => x.trim()).slice(-3, -2)[0] || null;
+      const info = analyzeHtml(page.html, page.finalUrl, city);
+      info.checks.sitemap = await hasSitemap(page.finalUrl || website, ctx);
       siteInfo = info;
       siteStatus = "Has website";
       if (!info.secure) tags.website.push("Not secure (no https padlock)");
@@ -742,5 +798,6 @@ export async function scanPlace(place: GooglePlace, searchType: string, ctx?: Sc
     site: siteInfo ? siteInfo.checks : null,
     photos: (place.photos || []).length,
     socialLinks: siteInfo ? siteInfo.socialLinks : {},
+    gbp: gbpInfo(place),
   };
 }

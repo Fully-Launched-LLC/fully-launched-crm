@@ -44,7 +44,9 @@ type Ctx = { show: (t: OutcomeToastInput) => void; flash: (text: string) => void
 const ToastContext = createContext<Ctx>({ show: () => {}, flash: () => {} });
 export const useOutcomeToast = () => useContext(ToastContext);
 
-export function OutcomeToastProvider({ children }: { children: React.ReactNode }) {
+// wrapClassName: render the toast inside this wrapper (pages outside the
+// Sales shell, e.g. the audit dossier, where .lf-root styles aren't around it).
+export function OutcomeToastProvider({ children, wrapClassName }: { children: React.ReactNode; wrapClassName?: string }) {
   const supabase = useMemo(() => createClient(), []);
   const [toast, setToast] = useState<(OutcomeToastInput & { at: number; n: number }) | null>(null);
   const [noteOpen, setNoteOpen] = useState(false);
@@ -145,7 +147,13 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
   return (
     <ToastContext.Provider value={{ show, flash }}>
       {children}
-      {toast && (
+      {toast && wrapClassName ? <div className={wrapClassName}>{renderToast()}</div> : renderToast()}
+    </ToastContext.Provider>
+  );
+
+  function renderToast() {
+    if (!toast) return null;
+    return (
         <div className="oc-toast" role="status" aria-live="polite" key={toast.n}>
           <div className="oc-toast-row">
             <span className="oc-toast-text">{toast.text}</span>
@@ -207,7 +215,6 @@ export function OutcomeToastProvider({ children }: { children: React.ReactNode }
           )}
           {msg && <p className={msg.tone === "ok" ? "hint" : "bad-text"} style={{ marginTop: 6 }}>{msg.text}</p>}
         </div>
-      )}
-    </ToastContext.Provider>
-  );
+    );
+  }
 }

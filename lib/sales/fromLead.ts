@@ -27,6 +27,7 @@ type ScanTagsJson = {
   photos?: number;
   webScore?: ScannedPlace["webScore"];
   socialLinks?: ScannedPlace["socialLinks"];
+  gbp?: ScannedPlace["gbp"] | null;
 };
 
 export function placeFromLead(l: SalesLeadRow): ScannedPlace {
@@ -65,6 +66,7 @@ export function placeFromLead(l: SalesLeadRow): ScannedPlace {
     photos: s.photos,
     webScore: s.webScore ?? null,
     socialLinks: s.socialLinks ?? {},
+    gbp: s.gbp ?? undefined,
   };
 }
 

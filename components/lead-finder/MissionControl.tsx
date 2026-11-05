@@ -14,14 +14,17 @@ import Dropdown from "@/components/lead-finder/Dropdown";
 import { ROCKET_IDLE_SRC } from "@/components/lead-finder/assets";
 import LocalDateTime from "@/components/LocalDateTime";
 import BusinessDetail from "@/components/sales/BusinessDetail";
-import { LatestOutcome, OutcomeChips, isHiddenOutcome } from "@/components/sales/OutcomeChips";
+import { SaveSearchButton } from "@/components/sales/SavedSearches";
+import { LatestOutcome, OutcomeChips, contactState, stopNotice, type ContactState } from "@/components/sales/OutcomeChips";
 
 // Matteo's mission control (Sales > Find results): stats, tabs, service
 // filter, bulk bar, table, sticky side preview. Outcomes are logged in the
 // side preview or the bulk bar (save on first click, toast with Add note /
 // Undo); a business with no record is saved first (lib/sales/log.ts).
-// Businesses already worked show their latest outcome; Not interested is
-// hidden until "Show already contacted". Matteo's score stays in exports
+// Every result shows: businesses already worked are dimmed with their
+// latest outcome sentence (Not interested / clients dimmed more, and
+// logging on them asks to confirm). Default sort: never contacted first,
+// then contacted, then stopped, each by priority. Matteo's score stays in exports
 // ("Need Score"); the UI shows the website score.
 
 export type Svc = Record<ServiceKey | "servicetitan", boolean>;
@@ -45,6 +48,8 @@ export default function MissionControl({
   onToggleSvc,
   onNewSearch,
   onRerun,
+  onSaveSearch,
+  defaultSearchName,
 }: {
   run: LeadFinderRun;
   results: RunResult[];
@@ -55,6 +60,8 @@ export default function MissionControl({
   onNewSearch: () => void;
   // null: this user can't start this kind of search (sweeps: Admin/Manager).
   onRerun: (() => void) | null;
+  onSaveSearch: ((name: string) => Promise<string | null>) | null;
+  defaultSearchName: () => string;
 }) {
   const isSweep = run.kind === "sweep";
   const [tab, setTab] = useState("all");
@@ -62,7 +69,6 @@ export default function MissionControl({
   const [sort, setSort] = useState<Sort>("priority");
   const [checked, setChecked] = useState<Set<string>>(new Set());
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [showContacted, setShowContacted] = useState(false);
   const [message, setMessage] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
   // Records created, touched or undone here (null: no record), and full
   // website scores fetched here, until the run's results reload.
@@ -107,8 +113,8 @@ export default function MissionControl({
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [withOverrides, svc]
   );
-  const hiddenCount = current.filter((r) => isHiddenOutcome(r.existing)).length;
-  const pool = showContacted ? current : current.filter((r) => !isHiddenOutcome(r.existing));
+  const pool = current;
+  const STATE_RANK: Record<ContactState, number> = { none: 0, contacted: 1, stopped: 2 };
 
   const test = (TABS.find((t) => t[0] === tab) ?? TABS[0])[2];
   const needle = q.trim().toLowerCase();
@@ -125,7 +131,9 @@ export default function MissionControl({
             ? b.place.reviews - a.place.reviews
             : sort === "website"
               ? websiteScore(a.place).score - websiteScore(b.place).score
-              : b.place.priority - a.place.priority || b.place.score - a.place.score
+              : STATE_RANK[contactState(a.existing)] - STATE_RANK[contactState(b.existing)] ||
+                b.place.priority - a.place.priority ||
+                b.place.score - a.place.score
     );
 
   const selected =
@@ -272,6 +280,7 @@ export default function MissionControl({
               </>
             )}
           </span>
+          {onSaveSearch && <SaveSearchButton defaultName={defaultSearchName} onSave={onSaveSearch} />}
           <button type="button" className="btn" onClick={() => exportCSV(false)}>
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />
@@ -335,17 +344,21 @@ export default function MissionControl({
                 </button>
               ))}
             </div>
-            <label className="toggle">
-              <input type="checkbox" className="chk" checked={showContacted} onChange={(e) => setShowContacted(e.target.checked)} />
-              Show already contacted ({hiddenCount})
-            </label>
           </div>
 
           {checked.size > 0 && (
             <div className="bulk">
               <b>{checked.size} selected</b>
               <div className="bulk-out">
-                <OutcomeChips bulk disabled={!me} onSave={(o) => log(checkedRows, o)} />
+                <OutcomeChips
+                  bulk
+                  disabled={!me}
+                  confirm={(() => {
+                    const n = checkedRows.filter((r) => stopNotice(r.existing)).length;
+                    return n ? `${n} of the selected ${n === 1 ? "business said" : "businesses said"} not interested or ${n === 1 ? "is" : "are"} already a client. Log anyway?` : null;
+                  })()}
+                  onSave={(o) => log(checkedRows, o)}
+                />
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
                 <button type="button" className="btn" onClick={() => exportCSV(true)}>
@@ -398,12 +411,12 @@ export default function MissionControl({
                     const l = r.place;
                     const city = (l.address || "").split(",").slice(-3, -1).join(",").trim();
                     const isSel = selected?.google_place_id === r.google_place_id;
-                    const touched = !!(r.existing?.last_touch || r.existing?.project_id);
+                    const state = contactState(r.existing);
                     const ws = websiteScore(l);
                     return (
                       <tr
                         key={r.google_place_id}
-                        className={`lead${isSel ? " sel" : ""}${touched ? " touched" : ""}`}
+                        className={`lead${isSel ? " sel" : ""}${state === "contacted" ? " touched" : state === "stopped" ? " touched stopped" : ""}`}
                         onClick={() => open(r.google_place_id)}
                       >
                         <td onClick={(e) => e.stopPropagation()}>
@@ -474,9 +487,7 @@ export default function MissionControl({
                     <td colSpan={6}>
                       <div className="empty-list">
                         {current.length
-                          ? hiddenCount && !showContacted
-                            ? "Nothing new in this view. Turn on Show already contacted to see the rest."
-                            : "No businesses in this view."
+                          ? "No businesses in this view."
                           : `Checked ${results.length} businesses. None matched${
                               svc.servicetitan
                                 ? ": no ServiceTitan users spotted. Many only use it inside the office, so it doesn’t show on their website."

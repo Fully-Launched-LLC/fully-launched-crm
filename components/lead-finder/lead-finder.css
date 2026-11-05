@@ -375,3 +375,29 @@
 .lf-root .bulk-out .oc-group{flex-direction:row;flex-wrap:wrap;align-items:center;gap:6px 8px;margin-bottom:6px;}
 .lf-root .li-prompt{display:flex;flex-direction:column;gap:6px;margin-top:8px;padding:10px;border:1px solid var(--line3);border-radius:10px;background:var(--panel2);}
 .lf-root .li-prompt .field{height:38px;font-size:13px;border-radius:9px;}
+/* Already-contacted results: dimmed, stopped ones (not interested, clients) more. */
+.lf-root tr.lead.touched td{opacity:.62;}
+.lf-root tr.lead.stopped td{opacity:.38;}
+.lf-root tr.lead.touched:hover td,.lf-root tr.lead.touched.sel td{opacity:.9;}
+.lf-root tr.lead.touched td:first-child{opacity:1;}
+.lf-root .oc-confirm{display:flex;flex-direction:column;gap:8px;margin-top:6px;padding:10px;border:1px solid var(--warn);border-radius:10px;background:rgba(240,179,126,.1);font-size:13px;color:var(--bright);}
+.lf-root .save-search{display:inline-flex;flex-wrap:wrap;align-items:center;gap:6px;}
+.lf-root .save-search .field{height:40px;width:auto;min-width:220px;font-size:13px;border-radius:10px;}
+.lf-root .saved-searches .ss-row{display:flex;align-items:center;gap:10px;padding:10px 16px;border-top:1px solid var(--line2);}
+.lf-root .saved-searches .ss-btns{display:flex;flex-wrap:wrap;gap:6px;flex:none;}
+.lf-root .saved-searches .ss-btns .btn{min-height:32px;padding:0 10px;font-size:12px;}
+/* Outcome buttons: tan (Matteo's gold) outline on hover and click; the
+   business's latest outcome stays outlined. Dark fill kept. */
+.lf-root .oc:hover,.lf-root .oc:focus-visible,.lf-root .oc:active,
+.lf-root .oc[aria-pressed="true"],.lf-root .oc.current{background:#0F1729;color:var(--bright);border-color:var(--gold);box-shadow:0 0 0 1px var(--gold);}
+.lf-root .oc.current{color:var(--gold-hi);}
+.lf-root .oc:focus-visible{outline:none;}
+/* Audit dossier: the internal (screen only) parts use the Sales dark theme. */
+.lf-root.dossier{border-radius:16px;padding:20px;margin-bottom:24px;}
+.lf-root.dossier .dossier-head{display:flex;flex-wrap:wrap;justify-content:space-between;gap:16px;padding-bottom:16px;margin-bottom:16px;border-bottom:1px solid var(--line2);}
+.lf-root.dossier .dossier-title{font:700 26px/1.15 var(--lf-display),sans-serif;color:var(--bright);margin:4px 0;}
+.lf-root.dossier .dossier-book{flex:0 1 320px;}
+.lf-root.dossier .dossier-book .book-call{padding-top:0;border-top:0;}
+.lf-root.dossier .dossier-body{display:flex;flex-direction:column;gap:16px;}
+.lf-root .draft.inline{width:100%;padding:0;}
+.lf-root.toast-host{background:transparent;position:static;}

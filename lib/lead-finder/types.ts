@@ -59,6 +59,7 @@ export type ScannedPlace = {
   // Profile URLs linked from their website: first per platform, tracking
   // parameters removed. LinkedIn = company page only. Missing before Nov 5.
   socialLinks?: SocialLinks;
+  gbp?: GbpInfo;
 };
 
 export const SOCIAL_PLATFORMS = ["Instagram", "Facebook", "TikTok", "YouTube", "LinkedIn"] as const;
@@ -73,12 +74,26 @@ export type SiteChecks = {
   h1: boolean;
   localSchema: boolean; // LocalBusiness / Organization (or a subtype) JSON-LD
   faqSchema: boolean;
+  // Added Nov 6 (missing on older scans: counted as not found).
+  sitemap?: boolean | null; // /sitemap.xml answers with a urlset/sitemapindex; null = couldn't check
+  schemaFields?: string[]; // which of name, address, telephone, openingHours, url the business schema has
+  servicesList?: boolean; // a services page/menu or several service links
+  serviceArea?: boolean; // "serving ...", "service area", or their city named on the page
+  imageCount?: number; // <img> tags on the homepage
+};
+
+// Google Business Profile details beyond what ScannedPlace already has.
+// Missing on scans before Nov 6.
+export type GbpInfo = {
+  description: boolean; // Google's business description (editorialSummary)
+  latestReviewAt: string | null; // newest of the (up to 5) reviews Google returns
+  categories: string[]; // primary category + Google types, readable
 };
 
 export type WebScoreCache = {
   url: string;
   at: string; // ISO time PageSpeed ran
-  speed: { performance: number | null; seo: number | null; accessibility: number | null; bestPractices: number | null };
+  speed: { performance: number | null; seo: number | null; accessibility: number | null; bestPractices: number | null; loadTime?: string | null };
 };
 
 // PageSpeed Insights result; when `error` is set the scores are absent.

@@ -16,6 +16,7 @@ export type OutcomeKey =
   | "no_answer"
   | "left_voicemail"
   | "not_available"
+  | "visited"
   | "interested"
   | "not_interested"
   | "booked_call"
@@ -34,7 +35,7 @@ export const OUTCOME_GROUPS: [OutcomeGroup, string][] = [
 // How a touch reads in rows, History and timelines. Includes outcomes the
 // buttons no longer log (Called (talked), Visited, Bad fit) so older
 // touches still show correctly.
-export type DisplayKey = OutcomeKey | "talked" | "visited" | "bad_fit" | "meeting" | "other";
+export type DisplayKey = OutcomeKey | "talked" | "bad_fit" | "meeting" | "other";
 
 export type Outcome = {
   key: OutcomeKey;
@@ -65,6 +66,7 @@ export const OUTCOMES: Outcome[] = [
   { key: "left_voicemail", label: "Left voicemail", group: "call", channel: "voicemail", direction: "outbound", outcome: null, followUp: "call" },
   // Reached someone, not the decision maker. details {spoke_with, role, email}; the note is what they said.
   { key: "not_available", label: "Not available", group: "call", channel: "cold_call", direction: "outbound", outcome: "not_available", needsForm: true, followUp: "call" },
+  { key: "visited", label: "Visited", group: "call", channel: "in_person", direction: "outbound", outcome: "sent", followUp: "call" },
   { key: "interested", label: "Interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "interested", opensMove: true },
   { key: "not_interested", label: "Not interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "not_interested" },
   // meeting_booked: the touch trigger sets status interested.
@@ -79,9 +81,10 @@ export const OUTCOMES: Outcome[] = [
 
 export const outcomeByKey = (k: OutcomeKey) => OUTCOMES.find((o) => o.key === k)!;
 
-// Hidden from search results by default ("Show already contacted").
+// "Stopped" businesses: shown strongly dimmed in results, and logging on
+// them asks to confirm first (with clients, i.e. moved to Interested).
 // bad_fit: older touches only.
-export const HIDDEN_OUTCOMES: DisplayKey[] = ["not_interested", "bad_fit"];
+export const STOP_OUTCOMES: DisplayKey[] = ["not_interested", "bad_fit"];
 
 export function resolveChannel(o: Outcome, lastChannel: string | null | undefined): string {
   return o.channel === "last" ? lastChannel || "cold_call" : o.channel;

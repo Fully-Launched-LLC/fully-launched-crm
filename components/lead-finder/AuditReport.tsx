@@ -2,24 +2,41 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import "@/components/lead-finder/audit.css";
+import "@/components/lead-finder/lead-finder.css";
+import { LF_FONT_VARS } from "@/components/lead-finder/fonts";
 import { createClient } from "@/lib/supabase/client";
 import { apiFetch } from "@/lib/lead-finder/apiFetch";
-import type { PageSpeed, SavedAudit, ScannedPlace, ServiceKey } from "@/lib/lead-finder/types";
+import type { TeamMember } from "@/lib/types";
+import type { ExistingLead, PageSpeed, SavedAudit, ScannedPlace } from "@/lib/lead-finder/types";
 import { buildRecommendations } from "@/lib/lead-finder/recommendations";
 import { buildCallScript, type PitchKey } from "@/lib/lead-finder/callScript";
-import { plausibleOwnerName } from "@/lib/lead-finder/ownerName";
-import { saveBusinessContact, zeroRowsReason } from "@/lib/sales/log";
-import { linkedinCompanySearch, linkedinPeopleSearch } from "@/lib/sales/owner";
-import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
+import { CHECK_GROUPS, websiteChecks, websiteScore } from "@/lib/lead-finder/websiteScore";
+import { gbpChecks } from "@/lib/lead-finder/gbpScore";
+import { logOutcome, zeroRowsReason } from "@/lib/sales/log";
+import { contactEmail, contactPhone, ownerNameOf } from "@/lib/sales/owner";
+import { defaultEmailKind } from "@/lib/sales/emailTemplates";
+import { outcomeByKey, type Outcome } from "@/lib/sales/outcomes";
+import { OutcomeToastProvider, useOutcomeToast } from "@/components/sales/OutcomeToast";
+import { LatestOutcome } from "@/components/sales/OutcomeChips";
+import BusinessDetail from "@/components/sales/BusinessDetail";
+import BookCall from "@/components/sales/BookCall";
+import DraftEmail from "@/components/sales/DraftEmail";
 
-// Matteo's audit.html: call script (screen only), Google's PageSpeed scores,
-// snapshot, findings, recommendations, next step. Two requests instead of
-// his one (each fits Vercel's 60s): /api/lead-finder/audit (Place Details +
-// website scan), then /api/lead-finder/pagespeed for a real website. When
-// the business is already a lead, the finished audit is saved to
-// leads.audit / audit_at (RLS decides who may).
+// The business dossier (opened from Run audit), in this order:
+//   a. header: business, category, address, rating, Assigned to, latest
+//      outcome, Book a call with Luke                          (screen only)
+//   b. the side preview: contact (editable), LinkedIn, social, badges,
+//      timeline, outcome buttons (BusinessDetail, dossier)        (screen only)
+//   c. website score breakdown (lib/lead-finder/websiteScore.ts)    (printed)
+//   d. Google Business Profile completeness (gbpScore.ts)           (printed)
+//      + recommendations and next step                             (printed)
+//   e. email drafts, five branch templates                        (screen only)
+//   f. call script, five branch tabs                              (screen only)
+// Print / Save as PDF prints only the client report (c, d, recommendations).
+// Data: /api/lead-finder/audit (Place Details + website scan), then
+// /api/lead-finder/pagespeed (also caches the full website score). With a
+// Sales record the finished audit is saved to leads.audit / audit_at.
 
-const LABELS: Record<ServiceKey, string> = { website: "Website", social: "Social", ecom: "E-commerce", ai: "AI" };
 
 type Part1 = { lead: ScannedPlace; speedUrl: string | null; previewUrl: string };
 type Speed = PageSpeed | null | "loading";
@@ -45,24 +62,29 @@ function Rich({ text }: { text: string }) {
   );
 }
 
-export default function AuditReport({
-  placeId,
-  type,
-  leadId: initialLeadId,
-  memberId,
-  saved,
-  recordOwner,
-}: {
+export default function AuditReport(props: AuditProps) {
+  return (
+    <OutcomeToastProvider wrapClassName={`lf-root ${LF_FONT_VARS} toast-host`}>
+      <AuditInner {...props} />
+    </OutcomeToastProvider>
+  );
+}
+
+type AuditProps = {
   placeId: string;
   type: string;
-  leadId: string | null;
-  memberId: string;
+  me: TeamMember;
+  members: TeamMember[];
   saved: SavedAudit | null;
-  // The Sales record's contact name (the person at the business): edited =
-  // a person typed it (title set, not the scanner's "Possible owner").
-  recordOwner: { name: string | null; edited: boolean; linkedin: string | null; companyLinkedin: string | null } | null;
-}) {
-  const [leadId, setLeadId] = useState<string | null>(initialLeadId);
+  // The Sales record, if there is one (any touch or edit here creates it).
+  initialExisting: ExistingLead | null;
+  sourceDetail: string;
+};
+
+function AuditInner({ placeId, type, me, members, saved, initialExisting, sourceDetail }: AuditProps) {
+  const toast = useOutcomeToast();
+  const [existing, setExisting] = useState<ExistingLead | null>(initialExisting);
+  const leadId = existing?.id ?? null;
   const [part1, setPart1] = useState<Part1 | null>(
     saved ? { lead: saved.place, speedUrl: null, previewUrl: saved.previewUrl } : null
   );
@@ -74,6 +96,7 @@ export default function AuditReport({
     saved ? { tone: "ok", text: `Saved audit from ${longDate(new Date(saved.ran_at))}.` } : null
   );
   const savedRun = useRef<string | null>(null);
+  const memberName = useCallback((id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown", [members]);
 
   const run = useCallback(async () => {
     setError(null);
@@ -122,54 +145,25 @@ export default function AuditReport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Owner name: one a person typed wins; else a confident scan guess; else
-  // unknown. Editable here; the call script uses it.
-  const [owner, setOwner] = useState<string | null | undefined>(
-    recordOwner?.edited ? recordOwner.name : recordOwner && plausibleOwnerName(recordOwner.name) ? recordOwner.name : undefined
-  );
-  const [ownerEdit, setOwnerEdit] = useState<string | null>(null);
-  const [ownerMsg, setOwnerMsg] = useState<string | null>(null);
+  // The scan, with the Sales record's contact on top: the business owner a
+  // person entered (or a confident scan guess), the record's phone. The
+  // call script and email drafts use this.
   const scanned = part1?.lead ?? null;
   const L = useMemo(
     () =>
       scanned
-        ? { ...scanned, ownerName: owner !== undefined ? owner : plausibleOwnerName(scanned.ownerName) ? scanned.ownerName : null }
+        ? { ...scanned, ownerName: ownerNameOf(scanned, existing), phone: contactPhone(scanned, existing) ?? "No phone listed" }
         : null,
-    [scanned, owner]
+    [scanned, existing]
   );
-
-  async function saveOwner() {
-    if (!L || ownerEdit == null) return;
-    setOwnerMsg(null);
-    // Any team member may edit the contact (update_business_contact,
-    // migration 020); a record deleted meanwhile is saved again first.
-    const res = await saveBusinessContact(
-      createClient(),
-      memberId,
-      {
-        key: placeId,
-        place: L,
-        searchType: type || null,
-        existing: leadId
-          ? { id: leadId, company: L.name, contact_name: owner ?? null, title: null, email: null, phone: null, contact_linkedin: null, company_linkedin: null, status: "new", owner: null, project_id: null, next_action: null, next_action_at: null, last_touch: null, matched_on: "google_place_id" }
-          : null,
-      },
-      { contact_name: ownerEdit, title: ownerEdit.trim() ? "Owner" : null },
-      "Audit"
-    );
-    if (res.existing) setLeadId(res.existing.id);
-    if (res.error) return setOwnerMsg(res.error);
-    setOwner(ownerEdit.trim() || null);
-    setOwnerEdit(null);
-  }
   const S = speed === "loading" ? null : speed;
   const recommendations = L ? buildRecommendations(L, S) : [];
 
   useEffect(() => {
-    if (L) document.title = "Online Presence Audit: " + L.name;
+    if (L) document.title = "Business dossier: " + L.name;
   }, [L]);
 
-  // Save a fresh, finished audit to the lead (once per run).
+  // Save a fresh, finished audit to the Sales record (once per run).
   useEffect(() => {
     if (!leadId || fromSaved || !L || !ranAt || speed === "loading" || savedRun.current === ranAt) return;
     savedRun.current = ranAt;
@@ -181,7 +175,7 @@ export default function AuditReport({
       recommendations,
       previewUrl: part1!.previewUrl,
       ran_at: ranAt,
-      ran_by: memberId,
+      ran_by: me.id,
     };
     void (async () => {
       const { data, error: err } = await createClient()
@@ -196,61 +190,43 @@ export default function AuditReport({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [leadId, fromSaved, L, ranAt, speed]);
 
+  // Logging from the header (Book a call) and the email drafts (Mark as
+  // sent); the side preview section logs through BusinessDetail.
+  async function quickLog(o: Outcome, extra?: { summary?: string | null; details?: Record<string, string> | null }): Promise<string | null> {
+    if (!scanned) return "The audit is still loading.";
+    let res;
+    try {
+      res = await logOutcome(createClient(), me.id, [{ key: placeId, place: scanned, searchType: type || null, existing }], o, sourceDetail, extra);
+    } catch (e) {
+      return (e as Error).message || "Could not save.";
+    }
+    if (res.failed.length) return res.failed[0].reason;
+    let current = res.saved[0].existing;
+    setExisting(current);
+    toast.show({
+      text: `${o.label} saved for ${scanned.name}.`,
+      saved: res.saved,
+      onUndone: (restored) => setExisting(restored[0]?.existing ?? null),
+      onNote: (note) => {
+        current = { ...current, last_touch: current.last_touch && { ...current.last_touch, summary: note } };
+        setExisting(current);
+      },
+      followUp: o.followUp
+        ? { kind: o.followUp, onSet: (_ids, next_action, next_action_at) => setExisting((current = { ...current, next_action, next_action_at })) }
+        : undefined,
+    });
+    return null;
+  }
+
   const busy = !error && (!L || speed === "loading");
-  const companyLi = recordOwner?.companyLinkedin || L?.socialLinks?.LinkedIn || null;
+  const result = scanned ? { google_place_id: placeId, search_type: type || null, place: scanned, existing } : null;
+  const gatekeeper = existing?.last_touch?.details?.spoke_with ?? null;
 
   return (
     <div className="lfa">
       <div className="page">
         <div className="toolbar">
           {save && <span className={`saved${save.tone === "bad" ? " bad" : ""}`}>{save.text}</span>}
-          {L && (ownerEdit == null ? (
-            <span className="owner-line">
-              Business owner: {L.ownerName ? <b>{L.ownerName}</b> : "unknown"}{" "}
-              <button type="button" className="plain" onClick={() => { setOwnerEdit(L.ownerName ?? ""); setOwnerMsg(null); }}>
-                {L.ownerName ? "Edit" : "Add"}
-              </button>
-            </span>
-          ) : (
-            <span className="owner-line">
-              <input
-                autoFocus
-                aria-label="Business owner name"
-                placeholder="First and last name"
-                value={ownerEdit}
-                onChange={(e) => setOwnerEdit(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveOwner();
-                  if (e.key === "Escape") setOwnerEdit(null);
-                }}
-              />
-              <button type="button" onClick={() => void saveOwner()}>Save</button>
-              <button type="button" className="plain" onClick={() => setOwnerEdit(null)}>Cancel</button>
-            </span>
-          ))}
-          {ownerMsg && <span className="saved bad">{ownerMsg}</span>}
-          {L && (
-            <span className="li-links">
-              {recordOwner?.linkedin ? (
-                <a className="plain" href={recordOwner.linkedin} target="_blank" rel="noopener noreferrer">
-                  LinkedIn: {L.ownerName ?? "profile"}
-                </a>
-              ) : (
-                <a className="plain" href={linkedinPeopleSearch(L.ownerName, L.name)} target="_blank" rel="noopener noreferrer">
-                  Find {L.ownerName ? L.ownerName.split(" ")[0] : "the owner"} on LinkedIn
-                </a>
-              )}
-              {companyLi ? (
-                <a className="plain" href={companyLi} target="_blank" rel="noopener noreferrer">
-                  Company LinkedIn
-                </a>
-              ) : (
-                <a className="plain" href={linkedinCompanySearch(L.name)} target="_blank" rel="noopener noreferrer">
-                  Find company on LinkedIn
-                </a>
-              )}
-            </span>
-          )}
           {fromSaved && (
             <button type="button" className="plain" onClick={() => void run()}>
               Run again
@@ -262,21 +238,77 @@ export default function AuditReport({
             </a>
           )}
           <button type="button" disabled={busy} onClick={() => window.print()}>
-            Print client audit / Save as PDF
+            Print client report / Save as PDF
           </button>
         </div>
 
         {error ? (
           <div className="error">{error}</div>
-        ) : !L ? (
+        ) : !L || !result ? (
           <div className="loading">
             <div className="spinner" />
-            <div>Building the audit: checking the website, then running Google’s speed test. This takes 20 to 60 seconds…</div>
+            <div>Building the dossier: checking the website, then running Google’s speed test. This takes 20 to 60 seconds…</div>
           </div>
         ) : (
           <>
-            <CallScriptBox L={L} speed={S} recommendations={recommendations} />
+            {/* a + b: internal, screen only */}
+            <div className={`lf-root ${LF_FONT_VARS} dossier no-print`}>
+              <div className="dossier-head">
+                <div style={{ minWidth: 0 }}>
+                  <div className="kicker">Business dossier</div>
+                  <h1 className="dossier-title">{L.name}</h1>
+                  <div className="meta">{[L.category, L.address].filter(Boolean).join(" · ")}</div>
+                  <div className="meta">
+                    {L.rating !== "N/A" ? `★ ${L.rating} from ${L.reviews} Google reviews` : "No Google rating yet"} · Assigned to:{" "}
+                    {existing?.owner ? memberName(existing.owner) : "nobody yet"}
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    {existing?.last_touch || existing?.project_id ? (
+                      <LatestOutcome existing={existing} memberName={memberName} />
+                    ) : (
+                      <span className="hint">No one has contacted this business yet.</span>
+                    )}
+                  </div>
+                </div>
+                <div className="dossier-book">
+                  <BookCall
+                    members={members}
+                    name={L.ownerName}
+                    email={contactEmail(scanned!, existing)}
+                    onBooked={() => void quickLog(outcomeByKey("booked_call"))}
+                  />
+                </div>
+              </div>
+              <div className="dossier-body">
+                <BusinessDetail
+                  dossier
+                  r={result}
+                  me={me}
+                  members={members}
+                  sourceDetail={sourceDetail}
+                  onSaved={setExisting}
+                  onRestored={setExisting}
+                  onWebScore={() => {}}
+                />
+              </div>
+            </div>
+
+            {/* c + d + recommendations: the client report, printed */}
             <Report L={L} speed={speed} recommendations={recommendations} date={ranAt ? new Date(ranAt) : new Date()} />
+
+            {/* e: email drafts, screen only */}
+            <div className={`lf-root ${LF_FONT_VARS} dossier no-print`}>
+              <DraftEmail
+                inline
+                ctx={{ place: L, ownerName: L.ownerName, gatekeeper, senderName: me.name, bookingLink: me.booking_link }}
+                to={contactEmail(scanned!, existing)}
+                onClose={() => {}}
+                onMarkSent={(subject, to) => quickLog(outcomeByKey("emailed"), { summary: subject, details: to ? { to } : null })}
+              />
+            </div>
+
+            {/* f: call script, screen only */}
+            <CallScriptBox L={L} speed={S} recommendations={recommendations} />
           </>
         )}
       </div>
@@ -284,6 +316,8 @@ export default function AuditReport({
   );
 }
 
+// The client report: website score breakdown, Google Business Profile,
+// recommendations, next step. The only part that prints.
 function Report({
   L,
   speed,
@@ -302,51 +336,13 @@ function Report({
       <div className="lbl">{lbl}</div>
     </div>
   );
-  const hasSite = L.websiteStatus === "Has website";
-  const facts: [string, React.ReactNode][] = [
-    ["Google rating", L.rating !== "N/A" ? `★ ${L.rating} from ${L.reviews} reviews` : "No rating yet"],
-    [
-      "Website",
-      L.website ? (
-        <>
-          <a href={L.website} target="_blank" rel="noopener noreferrer">{L.website}</a> ({L.websiteStatus})
-        </>
-      ) : (
-        "None listed on Google"
-      ),
-    ],
-    [
-      "Social media",
-      SOCIAL_PLATFORMS.some((p) => L.socialLinks?.[p]) ? (
-        <>
-          {SOCIAL_PLATFORMS.filter((p) => L.socialLinks?.[p]).map((p, i) => (
-            <span key={p}>
-              {i > 0 && " · "}
-              <a href={L.socialLinks?.[p] ?? undefined} target="_blank" rel="noopener noreferrer">{p}</a>
-            </span>
-          ))}
-        </>
-      ) : L.socials.length ? (
-        L.socials.join(", ")
-      ) : hasSite ? (
-        "No social links on their website"
-      ) : (
-        "Not checked"
-      ),
-    ],
-    ["Online store", L.store ? L.store : hasSite ? "None found" : "Not checked"],
-    ["Sells on", L.marketplaces === undefined ? "Not checked" : L.marketplaces.length ? L.marketplaces.join(", ") : hasSite ? "No marketplaces found" : "Not checked"],
-    ["Online booking", L.hasBooking == null ? "Not checked" : L.hasBooking ? "Yes" : "None found"],
-    ["Software spotted", L.tech.length ? L.tech.join(", ") : "None spotted"],
-    ["Paid ads", L.ads.length ? L.ads.join(", ") : "None detected"],
-  ];
-  if (L.shopify && L.shopify.products)
-    facts.push([
-      "Shopify catalog",
-      `${L.shopify.products}${L.shopify.capped ? "+" : ""} products · ${L.shopify.noPhoto} without photos · ${L.shopify.thinDescription} with thin descriptions`,
-    ]);
-  const findings: [ServiceKey, string][] = [];
-  (Object.keys(LABELS) as ServiceKey[]).forEach((k) => (L.tags[k] || []).forEach((t) => findings.push([k, t])));
+  const checks = websiteChecks(L, S);
+  const ws = websiteScore(L, S);
+  const webMissing = checks.filter((c) => c.earned < c.possible).map((c) => c.missing);
+  const gbp = gbpChecks(L);
+  const gbpTotal = gbp.reduce((a, c) => a + c.earned, 0);
+  const gbpMissing = gbp.filter((c) => c.earned < c.possible).map((c) => c.missing);
+  const photos = L.photos ?? 0;
 
   return (
     <>
@@ -357,60 +353,107 @@ function Report({
         <p style={{ marginTop: 10 }}>Prepared by FullyLaunched · {longDate(date)}</p>
       </header>
 
-      {speed === "loading" && (
-        <section>
-          <h2>Google’s scores for your website (on a phone)</h2>
-          <div className="loading small">
-            <div className="spinner" />
-            <div>Running Google’s speed test. This can take up to a minute…</div>
-          </div>
-        </section>
-      )}
-      {S && (
-        <section>
-          <h2>Google’s scores for your website (on a phone)</h2>
-          <div className="scores">
-            {card(S.performance, "Speed")}
-            {card(S.seo, "Search (SEO)")}
-            {card(S.accessibility, "Accessibility")}
-            {card(S.bestPractices, "Best practices")}
-          </div>
-          <p className="note">
-            Scores out of 100 from Google PageSpeed Insights, mobile test.
-            {S.loadTime ? ` Main content appears after ${S.loadTime}.` : ""}
-          </p>
-        </section>
-      )}
-
       <section>
-        <h2>Snapshot</h2>
-        <div className={`split${S?.screenshot ? "" : " one"}`}>
-          <ul className="facts">
-            {facts.map(([k, v]) => (
-              <li key={k}>
-                <span className="k">{k}</span>
-                <span>{v}</span>
-              </li>
-            ))}
-          </ul>
-          {S?.screenshot && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img className="shot" src={S.screenshot} alt="Phone view of the website" />
-          )}
+        <h2>Website score</h2>
+        <div className="bigscore">
+          <div className={`num ${grade(ws.score)}`}>{ws.score}</div>
+          <div>
+            <b>out of 100</b>
+            <p className="note">
+              {ws.kind === "full"
+                ? "Basics, search (SEO), AI-search readiness (AEO) and speed."
+                : speed === "loading"
+                  ? "Running Google’s speed test now. The speed part is added when it finishes."
+                  : "Basics, search (SEO) and AI-search readiness (AEO). Speed wasn’t tested."}
+            </p>
+          </div>
         </div>
+        {CHECK_GROUPS.map(([g, label]) => {
+          const rows = checks.filter((c) => c.group === g);
+          const earned = rows.reduce((a, c) => a + c.earned, 0);
+          const possible = rows.reduce((a, c) => a + c.possible, 0);
+          return (
+            <div key={g} className="checkgroup">
+              <h3>
+                {label} <span>{earned} / {possible}</span>
+              </h3>
+              <ul className="checks">
+                {rows.map((c) => (
+                  <li key={c.label} className={c.earned >= c.possible ? "ok" : c.earned > 0 ? "part" : "no"}>
+                    <span className="k">{c.label}</span>
+                    <span className="d">{c.detail ?? ""}</span>
+                    <span className="pts">{c.earned} / {c.possible}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          );
+        })}
+        <p className="note">
+          Images on the homepage: {L.site?.imageCount ?? "not counted"} · Google profile photos: {photos >= 10 ? "10+" : photos}
+        </p>
+        {S && (
+          <>
+            <h3 className="subhead">Google’s scores for the website (on a phone)</h3>
+            <div className={`split${S.screenshot ? "" : " one"}`}>
+              <div className="scores">
+                {card(S.performance, "Speed")}
+                {card(S.seo, "Search (SEO)")}
+                {card(S.accessibility, "Accessibility")}
+                {card(S.bestPractices, "Best practices")}
+              </div>
+              {S.screenshot && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img className="shot" src={S.screenshot} alt="Phone view of the website" />
+              )}
+            </div>
+            <p className="note">
+              Scores out of 100 from Google PageSpeed Insights, mobile test.
+              {S.loadTime ? ` Main content appears after ${S.loadTime}.` : ""}
+            </p>
+          </>
+        )}
+        {webMissing.length > 0 && (
+          <>
+            <h3 className="subhead">What’s missing</h3>
+            <ul className="missing">
+              {webMissing.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
+          </>
+        )}
       </section>
 
-      {findings.length > 0 && (
-        <section>
-          <h2>What we found</h2>
-          {findings.map(([k, t], i) => (
-            <div key={i} className="finding">
-              <span className={`pill ${k}`}>{LABELS[k]}</span>
-              <span>{t}</span>
-            </div>
+      <section>
+        <h2>Google Business Profile</h2>
+        <div className="bigscore">
+          <div className={`num ${grade(gbpTotal)}`}>{gbpTotal}</div>
+          <div>
+            <b>out of 100</b>
+            <p className="note">How complete the business’s Google profile is. It’s what most customers see first.</p>
+          </div>
+        </div>
+        <ul className="checks">
+          {gbp.map((c) => (
+            <li key={c.label} className={c.earned >= c.possible ? "ok" : c.earned > 0 ? "part" : "no"}>
+              <span className="k">{c.label}</span>
+              <span className="d">{c.value}</span>
+              <span className="pts">{c.earned} / {c.possible}</span>
+            </li>
           ))}
-        </section>
-      )}
+        </ul>
+        {gbpMissing.length > 0 && (
+          <>
+            <h3 className="subhead">What’s missing</h3>
+            <ul className="missing">
+              {gbpMissing.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
 
       {recommendations.length > 0 && (
         <section>
@@ -449,9 +492,18 @@ function CallScriptBox({
   recommendations: ReturnType<typeof buildRecommendations>;
 }) {
   const built = buildCallScript(L, speed, recommendations);
-  const [pick, setPick] = useState<PitchKey>(built.order[0]);
-  const [copied, setCopied] = useState(false);
-  const all = [...built.order, ...(Object.keys(built.scripts) as PitchKey[]).filter((k) => !built.order.includes(k))];
+  // Five branch tabs, like the email drafts. AI uses the ServiceTitan pitch
+  // for ServiceTitan users. Default: the business's top gap.
+  const aiKey: PitchKey = L.usesServiceTitan ? "servicetitan" : "ai";
+  const TABS: [PitchKey, string][] = [
+    [aiKey, "AI"],
+    ["website", "Website"],
+    ["social", "Social media"],
+    ["ecom", "E-commerce"],
+    ["general", "General"],
+  ];
+  const top = defaultEmailKind(L);
+  const [pick, setPick] = useState<PitchKey>(top === "ai" ? aiKey : top);
   const s = built.scripts[pick];
   const tel = L.phone && L.phone !== "No phone listed" ? L.phone.replace(/[^0-9+]/g, "") : "";
 
@@ -460,15 +512,14 @@ function CallScriptBox({
       <div className="script-top">
         <h2>Call script</h2>
         <div className="script-tabs">
-          {all.map((k) => (
+          {TABS.map(([k, label]) => (
             <button key={k} type="button" className={k === pick ? "on" : ""} onClick={() => setPick(k)}>
-              {built.scripts[k].label}
-              {built.order.includes(k) ? "" : " (not flagged)"}
+              {label}
             </button>
           ))}
         </div>
       </div>
-      <div className="private">For you only. This section is left out when you print or save the audit.</div>
+      <div className="private">For you only. Left out when you print the client report. Emails are in Email drafts above.</div>
       <div className="prep">
         <div>
           <b>Ask for</b>
@@ -520,22 +571,6 @@ function CallScriptBox({
       <div className="step">
         <h3>If you get voicemail</h3>
         <div className="say"><Rich text={built.voicemail} /></div>
-      </div>
-      <div className="step">
-        <h3>Follow-up email (attach the printed audit as a PDF)</h3>
-        <div className="email">{built.emailBody}</div>
-        <button
-          type="button"
-          className="copy"
-          onClick={() =>
-            void navigator.clipboard.writeText(built.emailBody).then(() => {
-              setCopied(true);
-              setTimeout(() => setCopied(false), 1500);
-            })
-          }
-        >
-          {copied ? "Copied" : "Copy email"}
-        </button>
       </div>
     </div>
   );
