@@ -406,3 +406,11 @@
 .lf-root .hist-wrap .hist-switch{max-width:1360px;margin:0 auto;padding:92px 24px 0;}
 .lf-root .hist-wrap .mc{padding-top:14px;}
 .lf-root .foot.pager{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px;}
+/* History > Searches: the Search column takes the width; the rest fit. */
+.lf-root table.searches td.s-search,.lf-root table.searches th.s-search{width:100%;min-width:320px;}
+.lf-root table.searches td.s-search .name{white-space:nowrap;}
+.lf-root table.searches td.s-search .meta{white-space:nowrap;}
+.lf-root table.searches .s-fit{width:1%;white-space:nowrap;}
+.lf-root table.searches td.s-when{font-size:12.5px;color:var(--muted);}
+.lf-root table.searches td.s-actions{text-align:right;}
+.lf-root table.searches .s-btns{display:flex;gap:6px;justify-content:flex-end;}

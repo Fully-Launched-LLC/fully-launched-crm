@@ -6,6 +6,7 @@ import type { TeamMember } from "@/lib/types";
 import type { LeadFinderRun } from "@/lib/lead-finder/types";
 import { bodyFromRun, describeSearch } from "@/lib/sales/runBody";
 import { SALES_SOURCES } from "@/lib/sales/outcomes";
+import { asMode, modeLabel } from "@/lib/sales/searchModes";
 import LocalDateTime from "@/components/LocalDateTime";
 
 // History > Searches: every Find run (lead_finder_runs), 25 a page, Mine
@@ -115,15 +116,15 @@ export default function SalesSearches({
           </div>
         )}
         <div className="tablewrap">
-          <table>
+          <table className="searches">
             <thead>
               <tr>
-                <th>Search</th>
-                <th>Ran by</th>
-                <th>When</th>
-                <th>Results</th>
-                <th title="Businesses from this search contacted after it ran">Contacted since</th>
-                <th />
+                <th className="s-search">Search</th>
+                <th className="s-fit">Ran by</th>
+                <th className="s-fit">When</th>
+                <th className="s-fit">Results</th>
+                <th className="s-fit" title="Businesses from this search contacted after it ran">Contacted since</th>
+                <th className="s-fit" />
               </tr>
             </thead>
             <tbody>
@@ -134,17 +135,21 @@ export default function SalesSearches({
               ) : runs.length ? (
                 runs.map((r) => {
                   const canRerun = r.kind === "search" || canSweep;
+                  const body = bodyFromRun(r);
+                  const focus = asMode(body.mode);
                   return (
                     <tr key={r.id} className="lead" onClick={() => onOpen(r.id)}>
-                      <td>
+                      <td className="s-search">
                         <button type="button" className="name" onClick={(e) => { e.stopPropagation(); onOpen(r.id); }}>
-                          {describeSearch(bodyFromRun(r))}
+                          {describeSearch({ ...body, mode: "all" })}
                         </button>
-                        <div className="meta">{r.kind === "sweep" ? "Area sweep" : "Quick search"}</div>
+                        <div className="meta">
+                          {r.kind === "sweep" ? "Sweep" : "Quick search"} · {focus === "all" ? "All" : `${modeLabel(focus)} focus`}
+                        </div>
                       </td>
-                      <td>{memberName(r.run_by)}</td>
-                      <td style={{ whiteSpace: "nowrap" }}><LocalDateTime iso={r.created_at} /></td>
-                      <td>
+                      <td className="s-fit">{memberName(r.run_by)}</td>
+                      <td className="s-fit s-when"><LocalDateTime iso={r.created_at} /></td>
+                      <td className="s-fit">
                         {r.status === "done"
                           ? r.result_count
                           : r.status === "running" || r.status === "queued"
@@ -153,9 +158,9 @@ export default function SalesSearches({
                               ? `Cancelled (${r.result_count})`
                               : "Failed"}
                       </td>
-                      <td>{contacted[r.id] ?? "…"}</td>
-                      <td onClick={(e) => e.stopPropagation()} style={{ whiteSpace: "nowrap" }}>
-                        <div style={{ display: "flex", gap: 6 }}>
+                      <td className="s-fit">{contacted[r.id] ?? "…"}</td>
+                      <td className="s-fit s-actions" onClick={(e) => e.stopPropagation()}>
+                        <div className="s-btns">
                           <button type="button" className="btn" onClick={() => onOpen(r.id)}>Open</button>
                           {canRerun && (
                             <button type="button" className="btn" onClick={() => onRunAgain(r)}>Run again</button>
