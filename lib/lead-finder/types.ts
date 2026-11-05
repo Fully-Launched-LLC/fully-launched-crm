@@ -139,7 +139,9 @@ export type ExistingLead = {
   id: string;
   company: string | null;
   contact_name: string | null; // owner name, editable in Sales
-  title: string | null; // "Owner" once a person set the name, else a scan guess
+  title: string | null; // "Possible owner" = scan guess; anything else was typed by a person
+  email: string | null;
+  phone: string | null;
   status: string;
   owner: string | null;
   project_id: string | null;

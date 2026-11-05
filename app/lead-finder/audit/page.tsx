@@ -37,7 +37,7 @@ export default async function AuditPage({
       .maybeSingle();
     if (data) {
       leadId = data.id;
-      recordOwner = { name: data.contact_name, edited: data.title === "Owner" };
+      recordOwner = { name: data.contact_name, edited: !!data.title && data.title !== "Possible owner" };
       const a = data.audit as SavedAudit | null;
       if (a && a.version === 1 && a.place) saved = a;
     }

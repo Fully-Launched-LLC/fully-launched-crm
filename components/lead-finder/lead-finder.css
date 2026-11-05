@@ -338,3 +338,5 @@
 .lf-root .owner-form .field{height:38px;font-size:13px;border-radius:9px;flex:1 1 180px;width:auto;}
 .lf-root .owner-form .btn{min-height:38px;}
 .lf-root .book-call{padding-top:14px;border-top:1px solid var(--line2);}
+.lf-root .contact-form{display:flex;flex-direction:column;gap:6px;}
+.lf-root .contact-form .field{height:38px;font-size:13px;border-radius:9px;}

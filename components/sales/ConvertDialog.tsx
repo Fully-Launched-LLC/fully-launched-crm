@@ -105,7 +105,7 @@ export default function ConvertDialog({
     if (e2 || !rows?.length) {
       setBusy(false);
       setError({
-        text: `The project was created, but this business couldn't be marked as moved (${e2?.message ?? "only its owner or an Admin/Manager can"}).`,
+        text: `The project was created, but this business couldn't be marked as moved (${e2?.message ?? "only the team member it's assigned to or an Admin/Manager can"}).`,
         projectId: project.id,
       });
       return;

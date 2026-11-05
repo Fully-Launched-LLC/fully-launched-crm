@@ -72,6 +72,8 @@ export function existingFromLead(l: SalesLeadRow, latest: LatestTouch | null): E
     company: l.company,
     contact_name: l.contact_name,
     title: l.title,
+    email: l.email,
+    phone: l.phone,
     status: l.status,
     owner: l.owner,
     project_id: l.project_id,

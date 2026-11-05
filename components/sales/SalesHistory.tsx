@@ -159,6 +159,8 @@ export default function SalesHistory({
                     next_action_at: ex.next_action_at,
                     contact_name: ex.contact_name,
                     title: ex.title,
+                    email: ex.email,
+                    phone: ex.phone,
                   },
                   latest: ex.last_touch,
                 }
@@ -174,13 +176,13 @@ export default function SalesHistory({
 
   function exportCSV() {
     if (!visible.length) return;
-    const headers = ["Business", "Owner", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Next Action", "Next Action Date", "Phone", "Website", "Address", "Google Maps Link"];
+    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Next Action", "Next Action Date", "Phone", "Website", "Address", "Google Maps Link"];
     const out = visible.map((r) => {
       const l = r.lead;
       const t = r.latest;
       const label = l.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
       const place = placeFromLead(l);
-      return [l.company ?? l.name, ownerNameOf(place, { ...resultFromLead(l, t).existing! }) ?? "", label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
+      return [l.company ?? l.name, ownerNameOf(place, { ...resultFromLead(l, t).existing! }) ?? "", l.title && l.title !== "Possible owner" ? l.title : "", l.owner ? memberName(l.owner) : "", label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
         (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.website ?? "", l.address ?? "", l.maps_url ?? ""];
     });
     const csv = [headers, ...out].map((r) => r.map((c) => '"' + String(c == null ? "" : c).replace(/"/g, '""') + '"').join(",")).join("\n");
@@ -300,7 +302,7 @@ export default function SalesHistory({
                           {r.latest || l.project_id ? (
                             <LatestOutcome
                               existing={{
-                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, status: l.status, owner: l.owner, project_id: l.project_id,
+                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, email: l.email, phone: l.phone, status: l.status, owner: l.owner, project_id: l.project_id,
                                 next_action: l.next_action, next_action_at: l.next_action_at, last_touch: r.latest, matched_on: "google_place_id",
                               }}
                               memberName={memberName}

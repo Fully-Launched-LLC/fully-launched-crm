@@ -17,8 +17,8 @@ import {
   websiteScore,
 } from "@/lib/lead-finder/websiteScore";
 import { canEditLead } from "@/lib/leads/list";
-import { logOutcome, saveOwnerName } from "@/lib/sales/log";
-import { ownerNameOf } from "@/lib/sales/owner";
+import { logOutcome, saveBusinessContact, zeroRowsReason } from "@/lib/sales/log";
+import { SCAN_TITLE, contactEmail, contactLabel, contactPhone, ownerNameOf } from "@/lib/sales/owner";
 import { OUTCOME_CLASS, classifyTouch, outcomeByKey, type LatestTouch, type Outcome } from "@/lib/sales/outcomes";
 import { OutcomeChips, LatestOutcome } from "@/components/sales/OutcomeChips";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
@@ -28,12 +28,14 @@ import LocalDateTime from "@/components/LocalDateTime";
 
 // The side preview for one business, used by Find (search results) and
 // History: actions (call, maps, site, Preview site, audit), outcome buttons
-// (save on first click, toast with Add note / Undo), latest outcome, owner
-// name (editable), next action, Move to Interested, the full touch timeline,
+// (save on first click, toast with Add note / Undo), latest outcome,
+// Assigned to (leads.owner, the CRM user), the business's contact (the
+// person there: name, title, email, phone; any team member can edit it),
+// next action, Move to Interested, the full touch timeline,
 // and the scan findings. Opening it runs PageSpeed in the background for the
 // full website score (cached 30 days per website).
 
-const RLS_HINT = "Only the business's owner or an Admin/Manager can change it.";
+const RLS_HINT = "Only the team member it's assigned to (or an Admin/Manager) can change this.";
 
 // One background PageSpeed run per website per page load.
 const scoreRuns = new Map<string, Promise<WebScoreCache | null>>();
@@ -71,8 +73,11 @@ export default function BusinessDetail({
   const ex = r.existing;
   const memberName = useCallback((id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown", [members]);
   const ownerName = ownerNameOf(l, ex);
-  const placeForScripts = { ...l, ownerName };
-  const tel = l.phone && l.phone !== "No phone listed" ? l.phone.replace(/[^0-9+]/g, "") : "";
+  const personLabel = contactLabel(ex?.title);
+  const email = contactEmail(l, ex);
+  const phone = contactPhone(l, ex);
+  const placeForScripts = { ...l, ownerName, phone: phone ?? "No phone listed" };
+  const tel = phone ? phone.replace(/[^0-9+]/g, "") : "";
   const preview = "/api/lead-finder/preview?" + previewQuery({ ...placeForScripts, type: r.search_type || l.category });
   // His audit page (app/lead-finder/audit). With a record id the result is
   // saved to it, and a saved audit reopens without a Google call.
@@ -138,22 +143,31 @@ export default function BusinessDetail({
     };
   }, [ex?.id, ex?.last_touch?.touched_at, ex?.last_touch?.summary, reload, supabase]);
 
-  // ---- Owner name ----
-  const [ownerEdit, setOwnerEdit] = useState<string | null>(null);
-  const [ownerMsg, setOwnerMsg] = useState<string | null>(null);
-  async function saveOwner() {
-    if (!me || ownerEdit == null) return;
-    setOwnerMsg(null);
-    const res = await saveOwnerName(
+  // ---- Contact (the person at the business): any team member ----
+  const [contactEdit, setContactEdit] = useState<{ contact_name: string; title: string; email: string; phone: string } | null>(null);
+  const [contactMsg, setContactMsg] = useState<string | null>(null);
+  function startContactEdit() {
+    setContactMsg(null);
+    setContactEdit({
+      contact_name: ownerName ?? "",
+      title: ex?.title && ex.title !== SCAN_TITLE ? ex.title : "Owner",
+      email: email ?? "",
+      phone: phone ?? "",
+    });
+  }
+  async function saveContact() {
+    if (!me || !contactEdit) return;
+    setContactMsg(null);
+    const res = await saveBusinessContact(
       supabase,
       me.id,
       { key: l.id, place: l, searchType: r.search_type, existing: ex },
-      ownerEdit,
+      contactEdit,
       sourceDetail
     );
     if (res.existing) onSaved(res.existing);
-    if (res.error) return setOwnerMsg(res.error);
-    setOwnerEdit(null);
+    if (res.error) return setContactMsg(res.error);
+    setContactEdit(null);
   }
 
   // ---- Next action ----
@@ -171,7 +185,7 @@ export default function BusinessDetail({
     const patch = { next_action: nextText.trim() || null, next_action_at: nextAt ? new Date(nextAt).toISOString() : null };
     const { data, error } = await supabase.from("leads").update(patch).eq("id", ex.id).select("id");
     if (error) return setNextMsg({ tone: "error", text: error.message });
-    if (!data?.length) return setNextMsg({ tone: "error", text: `Not saved. ${RLS_HINT}` });
+    if (!data?.length) return setNextMsg({ tone: "error", text: await zeroRowsReason(supabase, ex.id) });
     setNextMsg({ tone: "ok", text: "Saved." });
     onSaved({ ...ex, ...patch });
   }
@@ -286,7 +300,7 @@ export default function BusinessDetail({
           ) : (
             <p className="hint">No one has contacted this business yet.</p>
           )}
-          {ex && <p className="hint" style={{ marginTop: 4 }}>Assigned to: {ex.owner ? memberName(ex.owner) : "nobody"}</p>}
+          {ex && <p className="hint" style={{ marginTop: 4 }}>Assigned to: {ex.owner ? memberName(ex.owner) : "nobody yet"}</p>}
         </div>
       </div>
 
@@ -366,35 +380,36 @@ export default function BusinessDetail({
       <div>
         <div className="sec-title">Contact</div>
         <div className="contact-list">
-          {ownerEdit == null ? (
+          {contactEdit == null ? (
             <div>
-              Owner: {ownerName ? <b>{ownerName}</b> : <span className="meta">unknown</span>}{" "}
-              <button type="button" className="linkbtn" disabled={!me} onClick={() => { setOwnerEdit(ownerName ?? ""); setOwnerMsg(null); }}>
-                {ownerName ? "Edit" : "Add"}
+              {personLabel}: {ownerName ? <b>{ownerName}</b> : <span className="meta">unknown</span>}
+              {ownerName && ex?.title && ex.title !== SCAN_TITLE && !/^owner$/i.test(ex.title) && <span className="hint"> ({ex.title})</span>}{" "}
+              <button type="button" className="linkbtn" disabled={!me} onClick={startContactEdit}>
+                Edit contact
               </button>
             </div>
           ) : (
-            <div className="owner-form">
-              <input
-                className="field"
-                autoFocus
-                aria-label="Owner name"
-                placeholder="First and last name"
-                value={ownerEdit}
-                onChange={(e) => setOwnerEdit(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") void saveOwner();
-                  if (e.key === "Escape") setOwnerEdit(null);
-                }}
-              />
-              <button type="button" className="btn btn-gold" onClick={() => void saveOwner()}>Save</button>
-              <button type="button" className="btn" onClick={() => setOwnerEdit(null)}>Cancel</button>
+            <div className="contact-form">
+              <input className="field" autoFocus aria-label="Name" placeholder="First and last name" value={contactEdit.contact_name}
+                onChange={(e) => setContactEdit({ ...contactEdit, contact_name: e.target.value })} />
+              <input className="field" aria-label="Title" placeholder="Owner, office manager…" value={contactEdit.title}
+                onChange={(e) => setContactEdit({ ...contactEdit, title: e.target.value })} />
+              <input className="field" type="email" aria-label="Email" placeholder="Email" value={contactEdit.email}
+                onChange={(e) => setContactEdit({ ...contactEdit, email: e.target.value })} />
+              <input className="field" type="tel" aria-label="Phone" placeholder="Phone" value={contactEdit.phone}
+                onChange={(e) => setContactEdit({ ...contactEdit, phone: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && void saveContact()} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" className="btn btn-gold" onClick={() => void saveContact()}>Save</button>
+                <button type="button" className="btn" onClick={() => setContactEdit(null)}>Cancel</button>
+              </div>
+              <span className="hint">Anyone on the team can edit the contact. Saving also saves this business for the team.</span>
             </div>
           )}
-          {ownerMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{ownerMsg}</span>}
-          {tel && <a href={`tel:${tel}`}>{l.phone}</a>}
-          {l.emails.length > 0 ? (
-            l.emails.map((m) => (
+          {contactMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{contactMsg}</span>}
+          {tel && <a href={`tel:${tel}`}>{phone}</a>}
+          {email ? (
+            [email, ...l.emails.filter((m) => m !== email)].map((m) => (
               <a key={m} href={`mailto:${m}`}>{m}</a>
             ))
           ) : l.contactPage ? (
@@ -453,7 +468,7 @@ export default function BusinessDetail({
       <BookCall
         members={members}
         name={ownerName}
-        email={l.emails[0] ?? null}
+        email={email}
         onBooked={() => void save(outcomeByKey("booked_call"))}
       />
 

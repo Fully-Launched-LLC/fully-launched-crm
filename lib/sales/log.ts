@@ -61,6 +61,8 @@ export async function ensureRecords(
           company: it.place.name,
           contact_name: it.place.ownerName,
           title: it.place.ownerName ? "Possible owner" : null,
+          email: it.place.emails[0] ?? null,
+          phone: it.place.phone && it.place.phone !== "No phone listed" ? it.place.phone : null,
           status: "new",
           owner: o.result === "inserted" ? meId : null,
           project_id: null,
@@ -177,31 +179,48 @@ export async function noteOutcome(supabase: SupabaseClient, saved: SavedOutcome[
   return null;
 }
 
-// Owner name edit (detail panel, audit page): saves the business first if
-// it has no record, then writes contact_name. RLS: owner, unowned, or
-// Admin/Manager; a blocked update returns no rows.
-export async function saveOwnerName(
+// Contact info edit (side preview, audit page): the person at the business
+// (contact_name, title, email, phone). Any team member, whoever the record is
+// assigned to: update_business_contact (migration 020, SECURITY DEFINER,
+// only those four columns). Saves the business first if it has no record.
+// If the record was deleted meanwhile (a stale page), it is saved again from
+// the scan and the edit retried once.
+export type ContactFields = { contact_name?: string | null; title?: string | null; email?: string | null; phone?: string | null };
+
+export async function saveBusinessContact(
   supabase: SupabaseClient,
   meId: string,
   item: LogItem,
-  name: string,
+  fields: ContactFields,
   sourceDetail: string
 ): Promise<{ existing: ExistingLead | null; error: string | null }> {
-  const clean = name.trim() || null;
-  const { records, failed } = await ensureRecords(
-    supabase,
-    meId,
-    [{ ...item, place: { ...item.place, ownerName: clean } }],
-    sourceDetail
-  );
-  if (failed.length) return { existing: null, error: failed[0].reason };
-  const rec = records.get(item.key)!.existing;
-  const { data, error } = await supabase
-    .from("leads")
-    .update({ contact_name: clean, title: clean ? "Owner" : null })
-    .eq("id", rec.id)
-    .select("id");
-  if (error) return { existing: rec, error: error.message };
-  if (!data?.length) return { existing: rec, error: "Not saved. Only the business's owner or an Admin/Manager can change it." };
-  return { existing: { ...rec, contact_name: clean, title: clean ? "Owner" : null }, error: null };
+  const clean: ContactFields = {};
+  (Object.keys(fields) as (keyof ContactFields)[]).forEach((k) => (clean[k] = (fields[k] ?? "").trim() || null));
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const { records, failed } = await ensureRecords(
+      supabase,
+      meId,
+      [{ ...item, existing: attempt ? null : item.existing }],
+      sourceDetail
+    );
+    if (failed.length) return { existing: null, error: failed[0].reason };
+    const rec = records.get(item.key)!.existing;
+    const { data, error } = await supabase.rpc("update_business_contact", { p_lead_id: rec.id, p_fields: clean });
+    if (error?.code === "P0002" && attempt === 0) continue; // record gone: save it again, retry
+    if (error) return { existing: rec, error: error.message };
+    const d = data as { contact_name: string | null; title: string | null; email: string | null; phone: string | null };
+    return { existing: { ...rec, contact_name: d.contact_name, title: d.title, email: d.email, phone: d.phone }, error: null };
+  }
+  return { existing: null, error: "This business record no longer exists." };
+}
+
+// A leads update that came back with no rows: either RLS refused it, or the
+// record is gone (e.g. deleted while this page was open). Admin/Manager pass
+// every RLS check, so for them it's always the latter.
+export async function zeroRowsReason(supabase: SupabaseClient, leadId: string): Promise<string> {
+  const { data } = await supabase.from("leads").select("id").eq("id", leadId).maybeSingle();
+  return data
+    ? "Not saved. Only the team member it's assigned to (or an Admin/Manager) can change this."
+    : "Not saved: this business record no longer exists (it was deleted). Reload the page.";
 }

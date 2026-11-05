@@ -8,7 +8,7 @@ import type { PageSpeed, SavedAudit, ScannedPlace, ServiceKey } from "@/lib/lead
 import { buildRecommendations } from "@/lib/lead-finder/recommendations";
 import { buildCallScript, type PitchKey } from "@/lib/lead-finder/callScript";
 import { plausibleOwnerName } from "@/lib/lead-finder/ownerName";
-import { saveOwnerName } from "@/lib/sales/log";
+import { saveBusinessContact, zeroRowsReason } from "@/lib/sales/log";
 
 // Matteo's audit.html: call script (screen only), Google's PageSpeed scores,
 // snapshot, findings, recommendations, next step. Two requests instead of
@@ -18,7 +18,6 @@ import { saveOwnerName } from "@/lib/sales/log";
 // leads.audit / audit_at (RLS decides who may).
 
 const LABELS: Record<ServiceKey, string> = { website: "Website", social: "Social", ecom: "E-commerce", ai: "AI" };
-const RLS_HINT = "A Salesperson can only change businesses they own or that have no owner.";
 
 type Part1 = { lead: ScannedPlace; speedUrl: string | null; previewUrl: string };
 type Speed = PageSpeed | null | "loading";
@@ -57,7 +56,8 @@ export default function AuditReport({
   leadId: string | null;
   memberId: string;
   saved: SavedAudit | null;
-  // The Sales record's owner name: edited = a person typed it (title Owner).
+  // The Sales record's contact name (the person at the business): edited =
+  // a person typed it (title set, not the scanner's "Possible owner").
   recordOwner: { name: string | null; edited: boolean } | null;
 }) {
   const [leadId, setLeadId] = useState<string | null>(initialLeadId);
@@ -139,7 +139,9 @@ export default function AuditReport({
   async function saveOwner() {
     if (!L || ownerEdit == null) return;
     setOwnerMsg(null);
-    const res = await saveOwnerName(
+    // Any team member may edit the contact (update_business_contact,
+    // migration 020); a record deleted meanwhile is saved again first.
+    const res = await saveBusinessContact(
       createClient(),
       memberId,
       {
@@ -147,10 +149,10 @@ export default function AuditReport({
         place: L,
         searchType: type || null,
         existing: leadId
-          ? { id: leadId, company: L.name, contact_name: owner ?? null, title: null, status: "new", owner: null, project_id: null, next_action: null, next_action_at: null, last_touch: null, matched_on: "google_place_id" }
+          ? { id: leadId, company: L.name, contact_name: owner ?? null, title: null, email: null, phone: null, status: "new", owner: null, project_id: null, next_action: null, next_action_at: null, last_touch: null, matched_on: "google_place_id" }
           : null,
       },
-      ownerEdit,
+      { contact_name: ownerEdit, title: ownerEdit.trim() ? "Owner" : null },
       "Audit"
     );
     if (res.existing) setLeadId(res.existing.id);
@@ -186,7 +188,7 @@ export default function AuditReport({
         .eq("id", leadId)
         .select("id");
       if (err) setSave({ tone: "bad", text: "Not saved: " + err.message });
-      else if (!data?.length) setSave({ tone: "bad", text: "Not saved. " + RLS_HINT });
+      else if (!data?.length) setSave({ tone: "bad", text: await zeroRowsReason(createClient(), leadId) });
       else setSave({ tone: "ok", text: "Saved to this business." });
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -201,7 +203,7 @@ export default function AuditReport({
           {save && <span className={`saved${save.tone === "bad" ? " bad" : ""}`}>{save.text}</span>}
           {L && (ownerEdit == null ? (
             <span className="owner-line">
-              Owner: {L.ownerName ? <b>{L.ownerName}</b> : "unknown"}{" "}
+              Business owner: {L.ownerName ? <b>{L.ownerName}</b> : "unknown"}{" "}
               <button type="button" className="plain" onClick={() => { setOwnerEdit(L.ownerName ?? ""); setOwnerMsg(null); }}>
                 {L.ownerName ? "Edit" : "Add"}
               </button>
@@ -210,7 +212,7 @@ export default function AuditReport({
             <span className="owner-line">
               <input
                 autoFocus
-                aria-label="Owner name"
+                aria-label="Business owner name"
                 placeholder="First and last name"
                 value={ownerEdit}
                 onChange={(e) => setOwnerEdit(e.target.value)}
