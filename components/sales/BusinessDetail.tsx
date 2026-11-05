@@ -36,6 +36,7 @@ import ConvertDialog from "@/components/sales/ConvertDialog";
 import BookCall from "@/components/sales/BookCall";
 import RunsOn from "@/components/sales/RunsOn";
 import FindOwner from "@/components/sales/FindOwner";
+import { useSalesFlags } from "@/components/sales/SalesFlags";
 import { modeEmailKind, type SearchMode } from "@/lib/sales/searchModes";
 import { runsOn } from "@/lib/lead-finder/software";
 
@@ -91,6 +92,8 @@ export default function BusinessDetail({
 }) {
   const supabase = useMemo(() => createClient(), []);
   const toast = useOutcomeToast();
+  // "Find owner contact" only when APOLLO_API_KEY is set (server flag).
+  const flags = useSalesFlags();
   const l = r.place;
   const ex = r.existing;
   const memberName = useCallback((id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown", [members]);
@@ -583,7 +586,9 @@ export default function BusinessDetail({
           {!ex?.contact_linkedin && !companyLi && (
             <span className="hint">Found them? Paste the links in Edit contact.</span>
           )}
-          <FindOwner place={l} existing={ex} searchType={r.search_type} me={me} sourceDetail={sourceDetail} onSaved={onSaved} />
+          {flags.apollo && (
+            <FindOwner place={l} existing={ex} searchType={r.search_type} me={me} sourceDetail={sourceDetail} onSaved={onSaved} />
+          )}
         </div>
       </div>
 

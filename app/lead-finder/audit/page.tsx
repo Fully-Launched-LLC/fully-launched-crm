@@ -8,6 +8,8 @@ import { existingFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
 import type { LatestTouch } from "@/lib/sales/outcomes";
 import AuditReport from "@/components/lead-finder/AuditReport";
 import { asMode } from "@/lib/sales/searchModes";
+import { SalesFlagsProvider } from "@/components/sales/SalesFlags";
+import { salesFlags } from "@/lib/sales/flags";
 
 export const metadata: Metadata = { title: "Business dossier" };
 
@@ -57,7 +59,8 @@ export default async function AuditPage({
   }
 
   return (
-    <AuditReport
+    <SalesFlagsProvider flags={salesFlags()}>
+      <AuditReport
       placeId={searchParams.place ?? saved?.place.id ?? ""}
       type={searchParams.type ?? saved?.type ?? ""}
       me={me}
@@ -66,6 +69,7 @@ export default async function AuditPage({
       initialExisting={existing}
       sourceDetail={sourceDetail}
       mode={asMode(searchParams.mode)}
-    />
+      />
+    </SalesFlagsProvider>
   );
 }

@@ -3,6 +3,8 @@ import { getCurrentTeamMember } from "@/lib/auth";
 import type { TeamMember } from "@/lib/types";
 import type { LeadFinderRun } from "@/lib/lead-finder/types";
 import LeadFinder from "@/components/lead-finder/LeadFinder";
+import { SalesFlagsProvider } from "@/components/sales/SalesFlags";
+import { salesFlags } from "@/lib/sales/flags";
 
 // Sales: Find (search Google for local businesses, scan their websites, log
 // outcomes) and History (every Sales business and its latest outcome).
@@ -38,8 +40,10 @@ export default async function SalesPage({
 
   // Matteo's full-bleed dark layout (components/lead-finder/lead-finder.css),
   // under the CRM top nav.
+  // Flags: whether optional integrations are configured (never the keys).
   return (
-    <LeadFinder
+    <SalesFlagsProvider flags={salesFlags()}>
+      <LeadFinder
       member={teamMember}
       members={(members ?? []) as TeamMember[]}
       recentRuns={(runs ?? []) as LeadFinderRun[]}
@@ -48,6 +52,7 @@ export default async function SalesPage({
       initialTab={searchParams.lead || searchParams.due || searchParams.view === "history" ? "history" : "find"}
       initialDue={searchParams.due === "1"}
       initialLeadId={searchParams.lead ?? null}
-    />
+      />
+    </SalesFlagsProvider>
   );
 }
