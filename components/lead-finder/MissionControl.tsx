@@ -14,7 +14,6 @@ import Dropdown from "@/components/lead-finder/Dropdown";
 import { ROCKET_IDLE_SRC } from "@/components/lead-finder/assets";
 import LocalDateTime from "@/components/LocalDateTime";
 import BusinessDetail from "@/components/sales/BusinessDetail";
-import { SaveSearchButton } from "@/components/sales/SavedSearches";
 import RunsOn from "@/components/sales/RunsOn";
 import { ECOM_MODE_NOTE, asMode, modeCompare, modeIncludes, modeLabel } from "@/lib/sales/searchModes";
 import { runsOnText } from "@/lib/lead-finder/software";
@@ -51,8 +50,6 @@ export default function MissionControl({
   onToggleSvc,
   onNewSearch,
   onRerun,
-  onSaveSearch,
-  defaultSearchName,
 }: {
   run: LeadFinderRun;
   results: RunResult[];
@@ -63,8 +60,6 @@ export default function MissionControl({
   onNewSearch: () => void;
   // null: this user can't start this kind of search (sweeps: Admin/Manager).
   onRerun: (() => void) | null;
-  onSaveSearch: ((name: string) => Promise<string | null>) | null;
-  defaultSearchName: () => string;
 }) {
   const isSweep = run.kind === "sweep";
   // Branch focus saved with the run (lib/sales/searchModes.ts).
@@ -290,7 +285,6 @@ export default function MissionControl({
               </>
             )}
           </span>
-          {onSaveSearch && <SaveSearchButton defaultName={defaultSearchName} onSave={onSaveSearch} />}
           <button type="button" className="btn" onClick={() => exportCSV(false)}>
             <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M12 4v11M7 10l5 5 5-5M5 20h14" />

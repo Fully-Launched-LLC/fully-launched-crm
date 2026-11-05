@@ -1,22 +1,13 @@
 import type { LeadFinderRun, SearchParams, SweepParams } from "@/lib/lead-finder/types";
 import { asMode, modeLabel, type SearchMode } from "@/lib/sales/searchModes";
 
-// Saved searches (migration 025): params is the POST /api/lead-finder/runs
-// body, so running one is the same request as the original launch.
+// A run's POST /api/lead-finder/runs body, rebuilt from its params, so Re-run
+// for fresh data and History > Searches "Run again" send the same request.
 
 export type RunBody =
   | { kind: "search"; mode?: SearchMode; state: string; city: string; zip: string; type: string; depth: number; services: string[] }
   | { kind: "sweep"; mode?: SearchMode; state: string; city: string; zip: string; radius: number; services: string[]; types: string };
 
-export type SavedSearch = {
-  id: string;
-  user_id: string;
-  name: string;
-  kind: "search" | "sweep";
-  params: RunBody;
-  last_run_at: string | null;
-  created_at: string;
-};
 
 export function bodyFromRun(r: LeadFinderRun): RunBody {
   const p = r.params as SearchParams & SweepParams;
@@ -26,7 +17,7 @@ export function bodyFromRun(r: LeadFinderRun): RunBody {
 }
 
 // "HVAC · Naperville · 20", "Area sweep · 5 mi · Wheaton" (+ " · Website" for a focus).
-export function defaultSearchName(b: RunBody): string {
+export function describeSearch(b: RunBody): string {
   const where = b.city || b.zip || b.state;
   const focus = b.mode && b.mode !== "all" ? modeLabel(b.mode) : null;
   if (b.kind === "search") return [b.type, where, String(b.depth), focus].filter(Boolean).join(" · ");

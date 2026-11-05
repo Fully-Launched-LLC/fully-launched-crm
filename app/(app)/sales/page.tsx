@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentTeamMember } from "@/lib/auth";
 import type { TeamMember } from "@/lib/types";
-import type { LeadFinderRun } from "@/lib/lead-finder/types";
 import LeadFinder from "@/components/lead-finder/LeadFinder";
 import { SalesFlagsProvider } from "@/components/sales/SalesFlags";
 import { salesFlags } from "@/lib/sales/flags";
@@ -19,13 +18,9 @@ export default async function SalesPage({
 }) {
   const teamMember = await getCurrentTeamMember();
   const supabase = createClient();
-  const [{ data: members }, { data: runs }, { data: mine }] = await Promise.all([
+  // Past runs are listed in History > Searches (components/sales/SalesSearches.tsx).
+  const [{ data: members }, { data: mine }] = await Promise.all([
     supabase.from("team_members").select("*").order("name"),
-    supabase
-      .from("lead_finder_runs")
-      .select("*")
-      .order("created_at", { ascending: false })
-      .limit(15),
     // This user's most recent run: reopened when there's no ?run= and the
     // browser has no remembered last run.
     teamMember
@@ -46,7 +41,6 @@ export default async function SalesPage({
       <LeadFinder
       member={teamMember}
       members={(members ?? []) as TeamMember[]}
-      recentRuns={(runs ?? []) as LeadFinderRun[]}
       initialRunId={searchParams.run ?? null}
       fallbackRunId={mine?.[0]?.id ?? null}
       initialTab={searchParams.lead || searchParams.due || searchParams.view === "history" ? "history" : "find"}

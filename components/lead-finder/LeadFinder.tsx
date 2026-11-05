@@ -9,10 +9,9 @@ import RocketStage, { type Phase } from "@/components/lead-finder/RocketStage";
 import MissionControl, { type Svc } from "@/components/lead-finder/MissionControl";
 import SalesHistory from "@/components/sales/SalesHistory";
 import { OutcomeToastProvider } from "@/components/sales/OutcomeToast";
-import { SaveSearchButton, SavedSearchesPanel } from "@/components/sales/SavedSearches";
-import { bodyFromRun, defaultSearchName, type RunBody, type SavedSearch } from "@/lib/sales/savedSearch";
+import SalesSearches from "@/components/sales/SalesSearches";
+import { bodyFromRun, type RunBody } from "@/lib/sales/runBody";
 import { ECOM_MODE_NOTE, SEARCH_MODES, asMode, type SearchMode } from "@/lib/sales/searchModes";
-import LocalDateTime from "@/components/LocalDateTime";
 import { SessionExpiredError, apiFetch, readLastRun, writeLastRun } from "@/lib/lead-finder/apiFetch";
 import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
@@ -68,7 +67,6 @@ function locationLabel(state: string, city: string, zip: string) {
 export default function LeadFinder({
   member,
   members,
-  recentRuns,
   initialRunId,
   fallbackRunId,
   initialTab,
@@ -77,7 +75,6 @@ export default function LeadFinder({
 }: {
   member: TeamMember | null;
   members: TeamMember[];
-  recentRuns: LeadFinderRun[];
   initialRunId: string | null;
   // This user's most recent run, for when there's no ?run= and nothing in localStorage.
   fallbackRunId: string | null;
@@ -90,6 +87,7 @@ export default function LeadFinder({
   const canSweep = member?.role === "Admin" || member?.role === "Manager";
   const [view, setView] = useState<View>("launch");
   const [tab, setTab] = useState<Tab>(initialTab);
+  const [historyTab, setHistoryTab] = useState<"businesses" | "searches">("businesses");
 
   // ---- Form ----
   const [mode, setMode] = useState<Mode>("search");
@@ -172,7 +170,6 @@ export default function LeadFinder({
   }
 
   // ---- Run ----
-  const [runs, setRuns] = useState<LeadFinderRun[]>(recentRuns);
   const [run, setRun] = useState<LeadFinderRun | null>(null);
   const [progress, setProgress] = useState<RunProgress | null>(null);
   const [results, setResults] = useState<RunResult[] | null>(null);
@@ -211,7 +208,6 @@ export default function LeadFinder({
     setRun(json.run);
     setProgress(json.progress);
     if (withResults) setResults(json.results);
-    setRuns((prev) => prev.map((r) => (r.id === json.run.id ? json.run : r)));
     setNow(Date.now());
     return json.run as LeadFinderRun;
   }, []);
@@ -345,7 +341,7 @@ export default function LeadFinder({
   }
 
   // Run a search again from its request body: "Re-run for fresh data"
-  // (results older than 7 days) and My saved searches. The form is filled
+  // (results older than 7 days) and History > Searches (Run again). The form is filled
   // in; a quick search launches right away, a sweep (Admin/Manager) opens
   // its cost confirm on the launch pad first.
   function runBody(b: RunBody) {
@@ -390,53 +386,6 @@ export default function LeadFinder({
       : { kind: "sweep", mode: focus, state, city: city.trim(), zip: zip.trim(), radius, services: sweepServices, types: typesText };
   }
 
-  // ---- My saved searches (migration 025, own rows) ----
-  const [saved, setSaved] = useState<SavedSearch[]>([]);
-  const loadSaved = useCallback(async () => {
-    if (!member) return;
-    const { data } = await createClient()
-      .from("saved_searches")
-      .select("*")
-      .eq("user_id", member.id)
-      .order("last_run_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false });
-    setSaved((data ?? []) as SavedSearch[]);
-  }, [member]);
-  useEffect(() => {
-    void loadSaved();
-  }, [loadSaved]);
-
-  async function saveSearch(name: string, body: RunBody): Promise<string | null> {
-    if (!member) return "You need a team member profile to save searches.";
-    if (body.kind === "search" && (!body.state || !body.type)) return "Choose a state and a business type first.";
-    if (body.kind === "sweep" && !(body.state && (body.city || body.zip))) return "A sweep needs a state plus a city or zip.";
-    const { error } = await createClient().from("saved_searches").insert({ name, kind: body.kind, params: body, user_id: member.id });
-    if (error) return error.code === "42501" ? "Only Admins and Managers can save sweeps." : error.message;
-    await loadSaved();
-    return null;
-  }
-
-  async function runSaved(s: SavedSearch) {
-    const at = new Date().toISOString();
-    setSaved((prev) => prev.map((x) => (x.id === s.id ? { ...x, last_run_at: at } : x)));
-    void createClient().from("saved_searches").update({ last_run_at: at }).eq("id", s.id);
-    runBody(s.params);
-  }
-
-  async function renameSaved(s: SavedSearch, name: string): Promise<string | null> {
-    const { error } = await createClient().from("saved_searches").update({ name }).eq("id", s.id);
-    if (error) return error.message;
-    setSaved((prev) => prev.map((x) => (x.id === s.id ? { ...x, name } : x)));
-    return null;
-  }
-
-  async function deleteSaved(s: SavedSearch): Promise<string | null> {
-    const { error } = await createClient().from("saved_searches").delete().eq("id", s.id);
-    if (error) return error.message;
-    setSaved((prev) => prev.filter((x) => x.id !== s.id));
-    return null;
-  }
-
   async function start(body: Record<string, unknown>) {
     setRunError(null);
     setResults(null);
@@ -459,7 +408,6 @@ export default function LeadFinder({
     }
     setRun(json.run!);
     setProgress(json.progress!);
-    setRuns((prev) => [json.run!, ...prev.filter((r) => r.id !== json.run!.id)].slice(0, 15));
     setRunUrl(json.run!.id);
     writeLastRun(member?.id, json.run!.id);
     setDriving(true);
@@ -603,7 +551,6 @@ export default function LeadFinder({
     svc.servicetitan ? r.place.usesServiceTitan : r.place.services.some((s) => selectedServices.includes(s))
   ).length;
 
-  const memberName = (id: string | null) => members.find((m) => m.id === id)?.name ?? "Unknown";
 
   let card: React.ReactNode = null;
   if (phase === "orbit" && run) {
@@ -868,15 +815,12 @@ export default function LeadFinder({
                         )} at list price. 60 businesses can take about a minute.`
                       : "Searches every type below across the whole area, removes duplicates and ranks everything together. Keep this tab open while it runs."}
                   </p>
-                  <SaveSearchButton defaultName={() => defaultSearchName(currentBody())} onSave={(name) => saveSearch(name, currentBody())} />
                   <button ref={launchRef} type="button" className="btn-launch" disabled={launching} onClick={onLaunch}>
                     {ROCKET_ICON}
                     <span>{launching ? "Launching…" : "Launch search"}</span>
                   </button>
                 </div>
               </div>
-
-              <SavedSearchesPanel items={saved} canSweep={canSweep} onRun={(x) => void runSaved(x)} onRename={renameSaved} onDelete={deleteSaved} />
 
               <div className="missions">
                 <span>Saved missions</span>
@@ -890,24 +834,6 @@ export default function LeadFinder({
                 <button type="button" className="chip" onClick={() => starter("ecom")}>Boutiques · Naperville</button>
               </div>
 
-              {runs.length > 0 && (
-                <div className="panel recent">
-                  <h2>Recent searches</h2>
-                  {runs.map((r) => (
-                    <button key={r.id} type="button" className="r" aria-current={r.id === run?.id} onClick={() => void openRun(r.id)}>
-                      <div style={{ minWidth: 0 }}>
-                        <div className="r-name">{r.params.label}</div>
-                        <div className="r-meta">
-                          {r.kind === "sweep" ? "Area sweep" : "Quick search"} · {memberName(r.run_by)} · <LocalDateTime iso={r.created_at} />
-                        </div>
-                      </div>
-                      <div className="r-right">
-                        {r.status === "done" ? `${r.result_count} found` : r.status === "running" || r.status === "queued" ? "In flight" : r.status === "cancelled" ? "Cancelled" : "Failed"}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              )}
             </section>
           </main>
         </div>
@@ -925,15 +851,36 @@ export default function LeadFinder({
             onToggleSvc={toggleSvc}
             onNewSearch={newSearch}
             onRerun={run.kind === "search" || canSweep ? () => rerun(run) : null}
-            onSaveSearch={run.kind === "search" || canSweep ? (name) => saveSearch(name, bodyFromRun(run)) : null}
-            defaultSearchName={() => defaultSearchName(bodyFromRun(run))}
           />
         </div>
       )}
 
       {tab === "history" && (
-        <div className="mission-view">
-          <SalesHistory me={member} members={members} initialLeadId={initialLeadId} initialDue={initialDue} onSelect={setHistoryUrl} />
+        <div className="mission-view hist-wrap">
+          {/* History has two sections: Businesses (worked businesses) and Searches (every run). */}
+          <div className="hist-switch">
+            <div className="modes" role="tablist" aria-label="History">
+              {(["businesses", "searches"] as const).map((k) => (
+                <button key={k} type="button" role="tab" aria-selected={historyTab === k} onClick={() => setHistoryTab(k)}>
+                  {k === "businesses" ? "Businesses" : "Searches"}
+                </button>
+              ))}
+            </div>
+          </div>
+          {historyTab === "businesses" ? (
+            <SalesHistory me={member} members={members} initialLeadId={initialLeadId} initialDue={initialDue} onSelect={setHistoryUrl} />
+          ) : (
+            <SalesSearches
+              me={member}
+              members={members}
+              canSweep={canSweep}
+              onOpen={(id) => {
+                setTab("find");
+                void openRun(id);
+              }}
+              onRunAgain={(r) => rerun(r)}
+            />
+          )}
         </div>
       )}
       </OutcomeToastProvider>
