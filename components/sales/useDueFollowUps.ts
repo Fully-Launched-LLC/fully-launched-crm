@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { SALES_SOURCES } from "@/lib/sales/outcomes";
 
 // Count of my due follow-ups for the Sales nav badge: Sales businesses
 // assigned to me (leads.owner) with next_action_at today or earlier (my
@@ -20,7 +19,6 @@ export function useDueFollowUps(memberId: string | null, pathname: string): numb
         .from("leads")
         .select("id", { count: "exact", head: true })
         .eq("owner", memberId)
-        .in("source", SALES_SOURCES as unknown as string[])
         .lte("next_action_at", end.toISOString());
       if (live) setCount(n ?? 0);
     };

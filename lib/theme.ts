@@ -52,35 +52,40 @@ export const BRANCH_CARD_BORDERS: Record<Branch, string> = {
 export const BRANCH_CHART_COLORS: Record<Branch, string> = BRANCH_FILL;
 
 export type Stage =
-  | "Leads"
   | "Interested"
+  | "Negotiation"
   | "Signed"
   | "In Progress"
-  | "Complete"
   | "Subscriber"
+  | "Complete"
   | "Lost";
 
-// Order mirrors the `projects_stage_check` constraint in
-// supabase/migrations/002_projects_transactions_roles.sql, which is the
-// source of truth. Kanban columns, the Table's stage sort, and the dashboard
-// all follow this order — if the constraint changes, update this list too.
+// Order mirrors the `projects_stage_check` constraint (latest version in
+// supabase/migrations/*_projects_to_leads.sql), which is the source of
+// truth. "Leads" is no longer a project stage: businesses not yet interested
+// live in the Leads tab (leads table). Kanban columns, the Table's stage
+// sort, and the dashboard all follow this order. If the constraint changes,
+// update this list too.
 export const STAGES: Stage[] = [
-  "Leads",
   "Interested",
+  "Negotiation",
   "Signed",
   "In Progress",
-  "Complete",
   "Subscriber",
+  "Complete",
   "Lost",
 ];
 
-// Stage badge colors: Leads gray, Interested fuchsia, Signed indigo, In
-// Progress amber, Complete green, Subscriber teal, Lost red.
+// Stage new projects start in (matches the column default).
+export const DEFAULT_STAGE: Stage = "Interested";
+
+// Stage badge colors: Interested fuchsia, Negotiation orange, Signed indigo,
+// In Progress amber, Subscriber teal, Complete green, Lost red.
 // Pastel: -50 tint, -700 text, -200 border. Every pair is >= 4.5:1 (WCAG AA
 // for the badges' 12px text); the tightest is Complete at 4.79:1.
 export const STAGE_COLORS: Record<Stage, string> = {
-  Leads: "bg-neutral-50 text-neutral-700 border border-neutral-200",
   Interested: "bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200",
+  Negotiation: "bg-orange-50 text-orange-700 border border-orange-200",
   Signed: "bg-indigo-50 text-indigo-700 border border-indigo-200",
   "In Progress": "bg-amber-50 text-amber-700 border border-amber-200",
   Complete: "bg-green-50 text-green-700 border border-green-200",
@@ -93,8 +98,8 @@ export const STAGE_COLORS: Record<Stage, string> = {
 // so identity never depends on color alone (Complete/Subscriber sit close
 // together for full-color viewers too).
 export const STAGE_CHART_COLORS: Record<Stage, string> = {
-  Leads: "#737373",
   Interested: "#d946ef",
+  Negotiation: "#f97316",
   Signed: "#6366f1",
   "In Progress": "#f59e0b",
   Complete: "#22c55e",

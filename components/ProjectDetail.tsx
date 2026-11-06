@@ -27,6 +27,7 @@ import ChannelsField from "@/components/ChannelsField";
 import BookCallSection from "@/components/BookCallSection";
 import CallHistory from "@/components/CallHistory";
 import LeadHistory, { type ProjectLeadHistory } from "@/components/LeadHistory";
+import RemoveFromPipelineDialog from "@/components/RemoveFromPipelineDialog";
 import type { Call } from "@/lib/calls";
 import { branchChangePatch } from "@/lib/channels";
 import {
@@ -87,6 +88,7 @@ export default function ProjectDetail({
   teamMembers: TeamMember[];
   initialTasks: ProjectTask[];
   back: { href: string; label: string };
+  // Admin only (the projects "admin delete" RLS policy is the real gate).
   canDelete: boolean;
   // Admin/Manager — hides the Send buttons; the invoice route enforces it.
   canInvoice: boolean;
@@ -110,6 +112,7 @@ export default function ProjectDetail({
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [duplicating, setDuplicating] = useState(false);
+  const [removing, setRemoving] = useState(false);
 
   async function update(patch: Partial<Project>) {
     const previous = project;
@@ -142,6 +145,20 @@ export default function ProjectDetail({
       return;
     }
     router.push(back.href);
+    router.refresh();
+  }
+
+  // After remove_from_pipeline(): reload the row (stage Lost, lost_reason)
+  // and refresh the server data (lead history).
+  async function afterRemoved() {
+    setRemoving(false);
+    const { data, error } = await supabase
+      .from("projects")
+      .select("*")
+      .eq("id", project.id)
+      .maybeSingle();
+    if (data) setProject(data as Project);
+    setError(error ? error.message : null);
     router.refresh();
   }
 
@@ -260,6 +277,16 @@ export default function ProjectDetail({
           >
             {duplicating ? "Duplicating…" : "Duplicate project"}
           </button>
+          {project.stage !== "Lost" && (
+            <button
+              type="button"
+              onClick={() => setRemoving(true)}
+              disabled={deleting || duplicating}
+              className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+            >
+              Remove from pipeline
+            </button>
+          )}
           {canDelete && (
             <button
               type="button"
@@ -533,6 +560,15 @@ export default function ProjectDetail({
         onCancel={() => setPendingInvoice(null)}
         onConfirm={() => pendingInvoice && sendInvoice(pendingInvoice)}
       />
+
+      {removing && (
+        <RemoveFromPipelineDialog
+          projectId={project.id}
+          clientName={project.client_name}
+          onDone={afterRemoved}
+          onCancel={() => setRemoving(false)}
+        />
+      )}
 
       <ConfirmDialog
         open={confirmingDelete}

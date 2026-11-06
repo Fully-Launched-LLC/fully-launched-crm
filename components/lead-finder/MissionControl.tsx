@@ -471,6 +471,9 @@ export default function MissionControl({
                             )}
                           </div>
                           <LatestOutcome existing={r.existing} memberName={memberName} />
+                          {r.existing?.owner && r.existing.owner !== me?.id && (
+                            <span className="badge-owned">Owned by {memberName(r.existing.owner)}</span>
+                          )}
                         </td>
                         <td style={{ whiteSpace: "nowrap" }}>
                           {l.rating !== "N/A" ? (

@@ -12,7 +12,7 @@ import {
 import { googleLocate, googleTextSearch, LeadFinderConfigError, type GooglePlace } from "@/lib/lead-finder/google";
 import { mapLimit, scanPlace, SCAN_CONCURRENCY } from "@/lib/lead-finder/scanner";
 import { findLeadMatches } from "@/lib/leads/upsert";
-import { SALES_SOURCES, type LatestTouch } from "@/lib/sales/outcomes";
+import { isOutcomeTouch, type LatestTouch } from "@/lib/sales/outcomes";
 import { asMode } from "@/lib/sales/searchModes";
 import type {
   ExistingLead,
@@ -382,9 +382,8 @@ async function scannedResults(supabase: SupabaseClient, runId: string): Promise<
 
 // Every result is checked against existing leads with the database's match
 // rule (find_lead_matches, migration 018: place id, cid, email, domain,
-// phone, chain rule) so nobody contacts a business twice. Only Sales records
-// (source in SALES_SOURCES) are attached; legacy outreach rows never show in
-// Sales.
+// phone, chain rule) so nobody contacts a business twice. Every source is
+// attached (lead_finder, personal_network, etsy, manual, ...).
 export async function runResults(supabase: SupabaseClient, runId: string): Promise<RunResult[]> {
   const rows = await scannedResults(supabase, runId);
   const found = await findLeadMatches(
@@ -408,6 +407,8 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
     title: string | null;
     email: string | null;
     phone: string | null;
+    owner_email: string | null;
+    owner_phone: string | null;
     contact_linkedin: string | null;
     company_linkedin: string | null;
     status: string;
@@ -422,9 +423,8 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
   for (let i = 0; i < ids.length; i += 100) {
     const { data, error } = await supabase
       .from("leads")
-      .select("id, company, contact_name, title, email, phone, contact_linkedin, company_linkedin, status, owner, source, project_id, next_action, next_action_at")
-      .in("id", ids.slice(i, i + 100))
-      .in("source", SALES_SOURCES as unknown as string[]);
+      .select("id, company, contact_name, title, email, phone, owner_email, owner_phone, contact_linkedin, company_linkedin, status, owner, source, project_id, next_action, next_action_at")
+      .in("id", ids.slice(i, i + 100));
     if (error) throw new HttpError(500, error.message);
     (data ?? []).forEach((l) => byId.set(l.id, l as LeadRow));
   }
@@ -436,11 +436,11 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
   for (let i = 0; i < leadIds.length; i += 100) {
     const { data } = await supabase
       .from("lead_touches")
-      .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, details")
+      .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, details, event")
       .in("lead_id", leadIds.slice(i, i + 100))
       .order("touched_at", { ascending: false });
     (data ?? []).forEach((t) => {
-      if (!latest.has(t.lead_id)) {
+      if (!latest.has(t.lead_id) && isOutcomeTouch(t)) {
         latest.set(t.lead_id, {
           channel: t.channel,
           direction: t.direction,
@@ -449,6 +449,7 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
           touched_by: t.touched_by,
           touched_at: t.touched_at,
           details: t.details ?? null,
+          event: t.event ?? null,
         });
       }
     });
@@ -464,6 +465,8 @@ export async function runResults(supabase: SupabaseClient, runId: string): Promi
           title: m.row.title,
           email: m.row.email,
           phone: m.row.phone,
+          owner_email: m.row.owner_email,
+          owner_phone: m.row.owner_phone,
           contact_linkedin: m.row.contact_linkedin,
           company_linkedin: m.row.company_linkedin,
           status: m.row.status,

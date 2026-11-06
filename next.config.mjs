@@ -9,11 +9,11 @@ const nextConfig = {
         destination: "/projects/ecommerce",
         permanent: false,
       },
-      // Leads and Lead Finder became one Sales tab. ?lead= (opens History)
+      // Sales (and Lead Finder before it) is now the Leads tab. ?lead= (opens History)
       // and ?run= (opens a search) are carried over. /lead-finder/audit is a
       // different path and isn't redirected.
-      { source: "/leads", destination: "/sales", permanent: false },
-      { source: "/lead-finder", destination: "/sales", permanent: false },
+      { source: "/sales", destination: "/leads", permanent: false },
+      { source: "/lead-finder", destination: "/leads", permanent: false },
     ];
   },
 };

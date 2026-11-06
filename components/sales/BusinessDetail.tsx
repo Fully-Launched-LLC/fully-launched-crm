@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 import type { Lead, TeamMember } from "@/lib/types";
 import type { ExistingLead, RunResult, WebScoreCache } from "@/lib/lead-finder/types";
-import { SERVICE_LABELS, SERVICE_ORDER } from "@/lib/lead-finder/sweep";
+import { SERVICE_ORDER } from "@/lib/lead-finder/sweep";
 import { previewQuery } from "@/lib/lead-finder/previewQuery";
 import { apiFetch } from "@/lib/lead-finder/apiFetch";
 import {
@@ -15,8 +15,8 @@ import {
   hasRealSite,
   websiteScore,
 } from "@/lib/lead-finder/websiteScore";
-import { canEditLead } from "@/lib/leads/list";
-import { logOutcome, monthsFromNow, saveBusinessContact, setNextAction, zeroRowsReason } from "@/lib/sales/log";
+import { canEditLead, ownedByOther } from "@/lib/leads/list";
+import { logOutcome, monthsFromNow, saveBusinessContact, setNextAction, type ContactFields } from "@/lib/sales/log";
 import {
   SCAN_TITLE,
   companyLinkedin,
@@ -30,7 +30,7 @@ import {
 import { SOCIAL_PLATFORMS } from "@/lib/lead-finder/types";
 import { DEAD_REASONS, OUTCOME_CLASS, classifyTouch, outcomeByKey, shortDate, type LatestTouch, type Outcome, type TouchDetails } from "@/lib/sales/outcomes";
 import { summarizeTouches } from "@/lib/sales/sections";
-import { OutcomeChips, LatestOutcome, TouchLine, stopNotice } from "@/components/sales/OutcomeChips";
+import { OutcomeChips, TouchLine, stopNotice } from "@/components/sales/OutcomeChips";
 import DraftEmail from "@/components/sales/DraftEmail";
 import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 import ConvertDialog from "@/components/sales/ConvertDialog";
@@ -41,26 +41,30 @@ import { useSalesFlags } from "@/components/sales/SalesFlags";
 import { modeEmailKind, type SearchMode } from "@/lib/sales/searchModes";
 import { runsOn } from "@/lib/lead-finder/software";
 
-// The side preview for one business, used by Find (search results) and
-// History: actions (call, maps, site, Preview site, audit), outcome buttons
-// (save on first click, toast with Add note / Undo), latest outcome,
-// Assigned to (leads.owner, the CRM user), the business's contact (the
-// person there: name, title, email, phone; any team member can edit it),
-// next action, Move to Interested, the full touch timeline,
-// and the scan findings. Opening it runs PageSpeed in the background for the
-// full website score (cached 30 days per website).
+// The side preview for one business, used by Find (search results),
+// History and the audit dossier. Order:
+//   1. Header: name, category · city, Priority, Website score, Owned by
+//      (Admin/Manager: Reassign, reason required), "Next: ..." chip (click to
+//      change), the company's projects (projects.lead_id).
+//   2. What they need: top 3 gaps from the scan.
+//   3. Actions: Call, Run audit, Draft email; More: Google Maps, Visit site,
+//      Preview site, Book a call with Luke.
+//   4. Timeline (touches, meetings, notes, reassignments, releases).
+//   5. Contact: Business block (main phone, business email, website, social;
+//      from scans) and Owner block (name, title, direct phone, direct email,
+//      LinkedIn; never from scans). Any team member edits either.
+//   6. Log a touch: Call result / Email / LinkedIn (save on first click,
+//      toast with Add note / Undo / follow-up). Owned by someone else and
+//      not Admin/Manager: read-only ("Owned by X. Ask an Admin to reassign.";
+//      RLS on lead_touches enforces it, migration 030).
+// The dossier has no header or actions (the audit page has its own).
+// Opening it runs PageSpeed in the background for the full website score
+// (cached 30 days per website).
 
 const RLS_HINT = "Only the team member it's assigned to (or an Admin/Manager) can change this.";
 
 // One background PageSpeed run per website per page load.
 const scoreRuns = new Map<string, Promise<WebScoreCache | null>>();
-
-function toLocalInput(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
 
 type Touch = LatestTouch & { id: string; meeting_note_id: string | null };
 type Meeting = { id: string; title: string | null; started_at: string | null; summary_md: string | null; source_url: string | null };
@@ -172,7 +176,7 @@ export default function BusinessDetail({
     void (async () => {
       const { data } = await supabase
         .from("lead_touches")
-        .select("id, meeting_note_id, channel, direction, outcome, summary, touched_by, touched_at, details")
+        .select("id, meeting_note_id, channel, direction, outcome, summary, touched_by, touched_at, details, event")
         .eq("lead_id", ex.id)
         .order("touched_at", { ascending: false });
       if (!live) return;
@@ -212,60 +216,88 @@ export default function BusinessDetail({
     if (res.error) setContactMsg(res.error);
   }
 
-  // ---- Contact (the person at the business): any team member ----
-  const [contactEdit, setContactEdit] = useState<{
+  // ---- Contact: Business block and Owner block (migration 031) ----
+  // Business: main phone, business email, website, social links (scans).
+  // Owner: name, title, direct phone, direct email, LinkedIn (never from
+  // scans). Any team member edits either, whoever the business is assigned to.
+  const [bizEdit, setBizEdit] = useState<{ phone: string; email: string; company_linkedin: string } | null>(null);
+  const [ownerEdit, setOwnerEdit] = useState<{
     contact_name: string;
     title: string;
-    email: string;
-    phone: string;
+    owner_phone: string;
+    owner_email: string;
     contact_linkedin: string;
-    company_linkedin: string;
   } | null>(null);
   const [contactMsg, setContactMsg] = useState<string | null>(null);
-  function startContactEdit() {
+  function startBizEdit() {
     setContactMsg(null);
-    setContactEdit({
+    setOwnerEdit(null);
+    setBizEdit({ phone: phone ?? "", email: email ?? "", company_linkedin: companyLi ?? "" });
+  }
+  function startOwnerEdit() {
+    setContactMsg(null);
+    setBizEdit(null);
+    setOwnerEdit({
       contact_name: ownerName ?? "",
       title: ex?.title && ex.title !== SCAN_TITLE ? ex.title : "Owner",
-      email: email ?? "",
-      phone: phone ?? "",
+      owner_phone: ex?.owner_phone ?? "",
+      owner_email: ex?.owner_email ?? "",
       contact_linkedin: ex?.contact_linkedin ?? "",
-      company_linkedin: companyLi ?? "",
     });
   }
-  async function saveContact() {
-    if (!me || !contactEdit) return;
+  async function saveContact(fields: ContactFields, done: () => void) {
+    if (!me) return;
     setContactMsg(null);
-    const res = await saveBusinessContact(
-      supabase,
-      me.id,
-      { key: l.id, place: l, searchType: r.search_type, existing: ex },
-      contactEdit,
-      sourceDetail
-    );
+    const res = await saveBusinessContact(supabase, me.id, { key: l.id, place: l, searchType: r.search_type, existing: ex }, fields, sourceDetail);
     if (res.existing) onSaved(res.existing);
     if (res.error) return setContactMsg(res.error);
-    setContactEdit(null);
+    done();
   }
 
-  // ---- Next action ----
-  const [nextText, setNextText] = useState(ex?.next_action ?? "");
-  const [nextAt, setNextAt] = useState(toLocalInput(ex?.next_action_at ?? null));
-  const [nextMsg, setNextMsg] = useState<{ tone: "ok" | "error"; text: string } | null>(null);
-  useEffect(() => {
-    setNextText(ex?.next_action ?? "");
-    setNextAt(toLocalInput(ex?.next_action_at ?? null));
-    setNextMsg(null);
-  }, [ex?.id, ex?.next_action, ex?.next_action_at]);
-
-  async function saveNext() {
+  // ---- Next follow-up (header chip) ----
+  const [nextOpen, setNextOpen] = useState(false);
+  const [nextMsg, setNextMsg] = useState<string | null>(null);
+  async function setNext(at: Date | null) {
     if (!ex) return;
-    const patch = { next_action: nextText.trim() || null, next_action_at: nextAt ? new Date(nextAt).toISOString() : null };
-    const { data, error } = await supabase.from("leads").update(patch).eq("id", ex.id).select("id");
-    if (error) return setNextMsg({ tone: "error", text: error.message });
-    if (!data?.length) return setNextMsg({ tone: "error", text: await zeroRowsReason(supabase, ex.id) });
-    setNextMsg({ tone: "ok", text: "Saved." });
-    onSaved({ ...ex, ...patch });
+    if (at && Number.isNaN(at.getTime())) return;
+    const label = at ? ex.next_action || followLabel(ex.last_touch?.channel) : null;
+    const err = await setNextAction(supabase, ex.id, label, at ? at.toISOString() : null);
+    if (err) return setNextMsg(err);
+    setNextMsg(null);
+    setNextOpen(false);
+    onSaved({ ...ex, next_action: label, next_action_at: at ? at.toISOString() : null });
+  }
+
+  // ---- Company projects (projects.lead_id) ----
+  const [projects, setProjects] = useState<{ id: string; client_name: string; branch: string | null; stage: string }[]>([]);
+  useEffect(() => {
+    if (!ex?.id) return setProjects([]);
+    let live = true;
+    void supabase
+      .from("projects")
+      .select("id, client_name, branch, stage")
+      .eq("lead_id", ex.id)
+      .order("created_at")
+      .then(({ data }) => live && setProjects(data ?? []));
+    return () => {
+      live = false;
+    };
+  }, [ex?.id, ex?.project_id, supabase]);
+
+  // ---- Reassign (Admin / Manager, reason required, on the timeline) ----
+  const isManager = me?.role === "Admin" || me?.role === "Manager";
+  const [reassign, setReassign] = useState<{ to: string; reason: string } | null>(null);
+  const [reassignMsg, setReassignMsg] = useState<string | null>(null);
+  async function saveReassign() {
+    if (!ex || !reassign) return;
+    if (reassign.reason.trim().length < 3) return setReassignMsg("Add a reason.");
+    const to = reassign.to || null;
+    const { error } = await supabase.rpc("reassign_lead", { p_lead_id: ex.id, p_owner: to, p_reason: reassign.reason.trim() });
+    if (error) return setReassignMsg(error.message);
+    setReassign(null);
+    setReassignMsg(null);
+    onSaved({ ...ex, owner: to });
+    setReload((n) => n + 1);
   }
 
   // ---- Move to Interested ----
@@ -300,10 +332,8 @@ export default function BusinessDetail({
 
   // OutcomeChips: returns an error message or null.
   // Small prompts for outcomes with a form: who said no, revisit date, dead reason.
-  const [ask, setAsk] = useState<{ o: Outcome; kind: "who_said_no" | "revisit" | "dead" } | null>(null);
+  const [ask, setAsk] = useState<{ o: Outcome; kind: "who_said_no" | "revisit" | "dead" | "talked_to" } | null>(null);
   const [askDate, setAskDate] = useState("");
-  // Optional on call outcomes: who picked up (owner reached or not).
-  const [talkedTo, setTalkedTo] = useState<"owner" | "staff" | null>(null);
 
   async function save(o: Outcome): Promise<string | null> {
     if (o.form === "not_available") {
@@ -311,7 +341,7 @@ export default function BusinessDetail({
       setNaForm({ spoke_with: "", role: "", said: "", email: "" });
       return null;
     }
-    if (o.form === "who_said_no" || o.form === "revisit" || o.form === "dead") {
+    if (o.form === "who_said_no" || o.form === "revisit" || o.form === "dead" || o.form === "talked_to") {
       setAskDate("");
       setAsk({ o, kind: o.form });
       return null;
@@ -327,6 +357,13 @@ export default function BusinessDetail({
   async function saveWhoSaidNo(by: "owner" | "staff") {
     if (!ask) return;
     const res = await doSave(ask.o, { details: { said_no_by: by, talked_to: by } });
+    if (!res.error) setAsk(null);
+    else setContactMsg(res.error);
+  }
+  // Interested: who did you talk to (owner reached or not).
+  async function saveTalkedTo(by: "owner" | "staff") {
+    if (!ask) return;
+    const res = await doSave(ask.o, { details: { talked_to: by } });
     if (!res.error) setAsk(null);
     else setContactMsg(res.error);
   }
@@ -355,9 +392,6 @@ export default function BusinessDetail({
 
   async function doSave(o: Outcome, extra?: { summary?: string | null; details?: TouchDetails | null }): Promise<SaveResult> {
     if (!me) return { id: null, error: "You need a team member profile to log outcomes." };
-    // "Talked to" applies to call outcomes where someone picked up.
-    if (o.group === "call" && talkedTo && !["no_answer", "left_voicemail", "dead", "not_interested"].includes(o.key))
-      extra = { ...extra, details: { ...(extra?.details ?? {}), talked_to: talkedTo } };
     if (o.key === "not_available") extra = { ...extra, details: { ...(extra?.details ?? {}), talked_to: "staff" } };
     let res;
     try {
@@ -371,7 +405,6 @@ export default function BusinessDetail({
     latestRef.current = current;
     onSaved(current);
     setReload((n) => n + 1);
-    setTalkedTo(null);
     // 5+ outreach attempts with no reply or positive outcome: suggest Not now.
     const { data: all } = await supabase
       .from("lead_touches")
@@ -467,65 +500,171 @@ export default function BusinessDetail({
   const gatekeeper =
     touches.find((t) => t.details?.spoke_with)?.details?.spoke_with ?? ex?.last_touch?.details?.spoke_with ?? null;
 
+  // Owned by someone else (and I'm not Admin/Manager): read-only.
+  const readOnly = ownedByOther(ex, me);
+  const ownerMember = ex?.owner ? memberName(ex.owner) : null;
+  // The person to email / book: the owner's direct email first.
+  const personEmail = ex?.owner_email ?? email;
+  // Top 3 gaps from the scan, as short lines.
+  const topGaps = SERVICE_ORDER.filter((s) => l.services.includes(s))
+    .flatMap((s) => l.tags[s])
+    .slice(0, 3);
+  const city = cityOf(l.address);
+  const nextAtMs = ex?.next_action_at ? new Date(ex.next_action_at).getTime() : null;
+  const [moreOpen, setMoreOpen] = useState(false);
+
+  const ownerRow = ex && (
+    <div className="d-chips">
+      <span className="chip">{ownerMember ? `Owned by ${ownerMember}` : "Unassigned"}</span>
+      {isManager && (
+        <button type="button" className="chip" onClick={() => { setReassignMsg(null); setReassign(reassign ? null : { to: ex.owner ?? "", reason: "" }); }}>
+          Reassign
+        </button>
+      )}
+      {ex.next_action_at && (
+        <button
+          type="button"
+          className={`chip next${nextAtMs != null && nextAtMs < Date.now() ? " overdue" : ""}`}
+          disabled={!canEdit}
+          title={canEdit ? "Change the follow-up" : RLS_HINT}
+          onClick={() => setNextOpen(!nextOpen)}
+        >
+          Next: {ex.next_action || "Follow up"} {shortDate(ex.next_action_at)}
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <>
+      {/* 1. Header */}
       {!dossier && (
-        <>
-      <div className="d-head">
-        <div style={{ minWidth: 0 }}>
-          <div className="kicker">Business</div>
-          <h3>{l.name}</h3>
-          <div className="meta">{[l.category, l.address].filter(Boolean).join(" · ")}</div>
-          {(software.length > 0 || (l.marketplaces ?? []).length > 0) && (
-            <div style={{ marginTop: 6 }}>
-              <RunsOn tech={l.tech} />
-              {l.marketplaces?.length ? <span className="hint" style={{ marginLeft: software.length ? 6 : 0 }}>Sells on </span> : null}
-              {(l.marketplaces ?? []).map((m) => (
-                <span key={m} className="badge-mkt">{m}</span>
-              ))}
+        <div className="d-head">
+          <div style={{ minWidth: 0 }}>
+            <div className="kicker">Business</div>
+            <h3>{l.name}</h3>
+            <div className="meta">{[l.category, city].filter(Boolean).join(" · ")}</div>
+            {(software.length > 0 || (l.marketplaces ?? []).length > 0) && (
+              <div style={{ marginTop: 6 }}>
+                <RunsOn tech={l.tech} />
+                {l.marketplaces?.length ? <span className="hint" style={{ marginLeft: software.length ? 6 : 0 }}>Sells on </span> : null}
+                {(l.marketplaces ?? []).map((m) => (
+                  <span key={m} className="badge-mkt">{m}</span>
+                ))}
+              </div>
+            )}
+            {ownerRow}
+          </div>
+          <div className="d-score">
+            <div title={PRIORITY_TIP}>
+              <b style={{ color: "var(--bright)" }}>{l.priority}</b>
+              <small>priority</small>
+            </div>
+            <div title={WEBSITE_SCORE_TIP}>
+              <b className="ws">{ws.score}</b>
+              <small>
+                website · {ws.kind}
+                {scoreState === "running" && <span className="ws-run"> · checking</span>}
+              </small>
+            </div>
+          </div>
+        </div>
+      )}
+      {dossier && ownerRow}
+
+      {reassign && ex && (
+        <div className="chip-pop">
+          <select className="field" aria-label="Assign to" style={{ width: "auto" }} value={reassign.to}
+            onChange={(e) => setReassign({ ...reassign, to: e.target.value })}>
+            <option value="">Unassigned</option>
+            {members.map((m) => (
+              <option key={m.id} value={m.id}>{m.name}</option>
+            ))}
+          </select>
+          <input className="field" autoFocus aria-label="Reason" placeholder="Reason (required)" value={reassign.reason}
+            onChange={(e) => setReassign({ ...reassign, reason: e.target.value })}
+            onKeyDown={(e) => e.key === "Enter" && void saveReassign()} />
+          <button type="button" className="btn btn-gold" onClick={() => void saveReassign()}>Save</button>
+          <button type="button" className="btn" onClick={() => setReassign(null)}>Cancel</button>
+          {reassignMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{reassignMsg}</span>}
+        </div>
+      )}
+
+      {nextOpen && ex && canEdit && (
+        <div className="chip-pop">
+          <span className="hint">Follow up:</span>
+          <button type="button" className="btn-mini" onClick={() => void setNext(daysFromNow(1))}>Tomorrow</button>
+          <button type="button" className="btn-mini" onClick={() => void setNext(daysFromNow(3))}>In 3 days</button>
+          <button type="button" className="btn-mini" onClick={() => void setNext(daysFromNow(7))}>Next week</button>
+          <input className="field" type="date" aria-label="Follow-up date" style={{ height: 30, width: "auto" }}
+            min={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => e.target.value && void setNext(new Date(e.target.value + "T09:00:00"))} />
+          <button type="button" className="linkbtn" onClick={() => void setNext(null)}>Clear</button>
+          <button type="button" className="linkbtn" onClick={() => setNextOpen(false)}>Cancel</button>
+          {nextMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{nextMsg}</span>}
+        </div>
+      )}
+
+      {projects.length > 0 && (
+        <div className="proj-list">
+          {projects.map((p) => (
+            <a key={p.id} href={`/project/${p.id}`}>
+              {p.client_name}
+              <span className="hint"> · {[p.branch, p.stage].filter(Boolean).join(" · ")}</span>
+            </a>
+          ))}
+        </div>
+      )}
+
+      {/* 2. What they need */}
+      <div>
+        <div className="sec-title">What they need</div>
+        {topGaps.length ? (
+          <ul className="need-short">
+            {topGaps.map((t) => (
+              <li key={t}>{t}</li>
+            ))}
+          </ul>
+        ) : (
+          <p className="meta">No gaps flagged.</p>
+        )}
+      </div>
+
+      {/* 3. Actions */}
+      {!dossier && (
+        <div>
+          <div className="actions">
+            {tel ? <a className="btn" href={`tel:${tel}`}>Call</a> : <button type="button" className="btn" disabled>No phone</button>}
+            <a className="btn btn-gold" href={audit} target="_blank" rel="noopener noreferrer">Run audit</a>
+            {!readOnly && (
+              <button type="button" className="btn" disabled={!me} onClick={() => setDraftOpen(true)}>Draft email</button>
+            )}
+            <button type="button" className="btn" aria-expanded={moreOpen} onClick={() => setMoreOpen(!moreOpen)}>
+              More {moreOpen ? "▴" : "▾"}
+            </button>
+          </div>
+          {moreOpen && (
+            <div className="more-menu">
+              {l.mapsUrl ? (
+                <a className="btn" href={l.mapsUrl} target="_blank" rel="noopener noreferrer">Google Maps</a>
+              ) : (
+                <button type="button" className="btn" disabled>No map link</button>
+              )}
+              {l.website ? (
+                <a className="btn" href={l.website} target="_blank" rel="noopener noreferrer">Visit site</a>
+              ) : (
+                <button type="button" className="btn" disabled>No website</button>
+              )}
+              <a className="btn" href={preview} target="_blank" rel="noopener noreferrer">Preview site</a>
+              {!readOnly && (
+                <BookCall compact members={members} name={ownerName} email={personEmail} onBooked={() => void save(outcomeByKey("booked_call"))} />
+              )}
             </div>
           )}
         </div>
-        <div className="d-score">
-          <div title={PRIORITY_TIP}>
-            <b style={{ color: "var(--bright)" }}>{l.priority}</b>
-            <small>priority</small>
-          </div>
-          <div title={WEBSITE_SCORE_TIP}>
-            <b className="ws">{ws.score}</b>
-            <small>
-              website · {ws.kind}
-              {scoreState === "running" && <span className="ws-run"> · checking</span>}
-            </small>
-          </div>
-        </div>
-      </div>
-
-      <div className="actions">
-        {tel ? <a className="btn" href={`tel:${tel}`}>Call</a> : <button type="button" className="btn" disabled>No phone</button>}
-        {l.mapsUrl ? (
-          <a className="btn" href={l.mapsUrl} target="_blank" rel="noopener noreferrer">Google Maps</a>
-        ) : (
-          <button type="button" className="btn" disabled>No map link</button>
-        )}
-        {l.website ? (
-          <a className="btn" href={l.website} target="_blank" rel="noopener noreferrer">Visit site</a>
-        ) : (
-          <button type="button" className="btn" disabled>No website</button>
-        )}
-        <a className="btn" href={preview} target="_blank" rel="noopener noreferrer">Preview site</a>
-        <a className="btn btn-gold" style={{ gridColumn: "1 / -1" }} href={audit} target="_blank" rel="noopener noreferrer">
-          Run audit
-        </a>
-        <button type="button" className="btn" style={{ gridColumn: "1 / -1" }} disabled={!me} onClick={() => setDraftOpen(true)}>
-          Draft email
-        </button>
-      </div>
-
-        </>
       )}
 
-      {/* Order: header, actions, timeline, contact, log an outcome, book a call; then the scan findings. */}
+      {/* 4. Timeline */}
       {touches.length > 0 && (
         <div>
           <div className="sec-title">Timeline</div>
@@ -585,7 +724,8 @@ export default function BusinessDetail({
               return (
                 <li key={t.id}>
                   <TouchLine t={t} memberName={memberName} />
-                  {t.summary && <div className="latest-note">“{t.summary}”</div>}
+                  {/* Removed from pipeline carries its note in the sentence. */}
+                  {t.summary && t.event !== "removed_from_pipeline" && <div className="latest-note">“{t.summary}”</div>}
                 </li>
               );
             })}
@@ -593,125 +733,192 @@ export default function BusinessDetail({
         </div>
       )}
 
+      {/* 5. Contact: Business and Owner */}
       <div>
         <div className="sec-title">Contact</div>
-        <div className="contact-list">
-          {contactEdit == null ? (
-            <div>
-              {personLabel}: {ownerName ? <b>{ownerName}</b> : <span className="meta">unknown</span>}
-              {ownerName && ex?.title && ex.title !== SCAN_TITLE && !/^owner$/i.test(ex.title) && <span className="hint"> ({ex.title})</span>}{" "}
-              <button type="button" className="linkbtn" disabled={!me} onClick={startContactEdit}>
-                Edit contact
-              </button>
+        {contactMsg && <p className="bad-text" style={{ fontSize: 12.5, marginBottom: 6 }}>{contactMsg}</p>}
+
+        <div className="c-block">
+          <div className="c-head">
+            Business
+            {bizEdit == null && (
+              <button type="button" className="linkbtn" disabled={!me} onClick={startBizEdit}>Edit</button>
+            )}
+          </div>
+          {bizEdit ? (
+            <div className="contact-form">
+              <input className="field" autoFocus type="tel" aria-label="Main phone" placeholder="Main phone" value={bizEdit.phone}
+                onChange={(e) => setBizEdit({ ...bizEdit, phone: e.target.value })} />
+              <input className="field" type="email" aria-label="Business email" placeholder="Business email" value={bizEdit.email}
+                onChange={(e) => setBizEdit({ ...bizEdit, email: e.target.value })} />
+              <input className="field" type="url" aria-label="Company LinkedIn" placeholder="Company LinkedIn page link" value={bizEdit.company_linkedin}
+                onChange={(e) => setBizEdit({ ...bizEdit, company_linkedin: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && void saveContact(bizEdit, () => setBizEdit(null))} />
+              <div style={{ display: "flex", gap: 6 }}>
+                <button type="button" className="btn btn-gold" onClick={() => void saveContact(bizEdit, () => setBizEdit(null))}>Save</button>
+                <button type="button" className="btn" onClick={() => setBizEdit(null)}>Cancel</button>
+              </div>
             </div>
           ) : (
+            <>
+              {foundPhones.length ? (
+                foundPhones.map((p) => (
+                  <div key={p.value} className="c-row">
+                    <span className="k">Main phone</span>
+                    <a href={`tel:${p.value.replace(/[^0-9+]/g, "")}`}>{p.value}</a> <span className="hint">{p.source}</span>
+                    {foundPhones.length > 1 &&
+                      (samePhone(p.value, phone) ? (
+                        <span className="primary-tag">primary</span>
+                      ) : (
+                        <button type="button" className="linkbtn" disabled={!me} onClick={() => void makePrimary({ phone: p.value })}>Make primary</button>
+                      ))}
+                  </div>
+                ))
+              ) : (
+                <div className="c-row"><span className="k">Main phone</span><span className="meta">Not found yet</span></div>
+              )}
+              {foundEmails.length ? (
+                foundEmails.map((e) => (
+                  <div key={e.value} className="c-row">
+                    <span className="k">Email</span>
+                    <a href={`mailto:${e.value}`}>{e.value}</a> <span className="hint">{e.source}</span>
+                    {foundEmails.length > 1 &&
+                      (e.value.toLowerCase() === (email ?? "").toLowerCase() ? (
+                        <span className="primary-tag">primary</span>
+                      ) : (
+                        <button type="button" className="linkbtn" disabled={!me} onClick={() => void makePrimary({ email: e.value })}>Make primary</button>
+                      ))}
+                  </div>
+                ))
+              ) : (
+                <div className="c-row">
+                  <span className="k">Email</span>
+                  {l.contactPage ? (
+                    <a href={l.contactPage} target="_blank" rel="noopener noreferrer">Contact page</a>
+                  ) : (
+                    <span className="meta">Not found yet</span>
+                  )}
+                </div>
+              )}
+              <div className="c-row">
+                <span className="k">Website</span>
+                {l.website ? (
+                  <a href={l.website} target="_blank" rel="noopener noreferrer">{l.website.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, "")}</a>
+                ) : (
+                  <span className="meta">None</span>
+                )}
+              </div>
+              <div className="c-row">
+                <span className="k">Social</span>
+                {socialLinks.length || companyLi ? (
+                  <span>
+                    {socialLinks.map(([p, url], i) => (
+                      <span key={p}>
+                        {i > 0 && " · "}
+                        <a href={url} target="_blank" rel="noopener noreferrer">{p}</a>
+                      </span>
+                    ))}
+                    {companyLi && (
+                      <>
+                        {socialLinks.length ? " · " : ""}
+                        <a href={companyLi} target="_blank" rel="noopener noreferrer">LinkedIn</a>
+                      </>
+                    )}
+                  </span>
+                ) : (
+                  <span className="meta">{l.site || l.socialLinks ? "None on their website" : "Not checked"}</span>
+                )}
+                {!companyLi && (
+                  <a className="btn-mini" href={linkedinCompanySearch(l.name)} target="_blank" rel="noopener noreferrer">Find company on LinkedIn</a>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="c-block">
+          <div className="c-head">
+            {personLabel === "Contact" ? "Contact" : "Owner"}
+            {ownerEdit == null && (
+              <button type="button" className="linkbtn" disabled={!me} onClick={startOwnerEdit}>Edit</button>
+            )}
+          </div>
+          {ownerEdit ? (
             <div className="contact-form">
-              <input className="field" autoFocus aria-label="Name" placeholder="First and last name" value={contactEdit.contact_name}
-                onChange={(e) => setContactEdit({ ...contactEdit, contact_name: e.target.value })} />
-              <input className="field" aria-label="Title" placeholder="Owner, office manager…" value={contactEdit.title}
-                onChange={(e) => setContactEdit({ ...contactEdit, title: e.target.value })} />
-              <input className="field" type="email" aria-label="Email" placeholder="Email" value={contactEdit.email}
-                onChange={(e) => setContactEdit({ ...contactEdit, email: e.target.value })} />
-              <input className="field" type="tel" aria-label="Phone" placeholder="Phone" value={contactEdit.phone}
-                onChange={(e) => setContactEdit({ ...contactEdit, phone: e.target.value })} />
-              <input className="field" type="url" aria-label="Business owner's LinkedIn" placeholder="Their LinkedIn profile link" value={contactEdit.contact_linkedin}
-                onChange={(e) => setContactEdit({ ...contactEdit, contact_linkedin: e.target.value })} />
-              <input className="field" type="url" aria-label="Company LinkedIn" placeholder="Company LinkedIn page link" value={contactEdit.company_linkedin}
-                onChange={(e) => setContactEdit({ ...contactEdit, company_linkedin: e.target.value })}
-                onKeyDown={(e) => e.key === "Enter" && void saveContact()} />
+              <input className="field" autoFocus aria-label="Name" placeholder="First and last name" value={ownerEdit.contact_name}
+                onChange={(e) => setOwnerEdit({ ...ownerEdit, contact_name: e.target.value })} />
+              <input className="field" aria-label="Title" placeholder="Owner, office manager…" value={ownerEdit.title}
+                onChange={(e) => setOwnerEdit({ ...ownerEdit, title: e.target.value })} />
+              <input className="field" type="tel" aria-label="Direct phone" placeholder="Direct phone" value={ownerEdit.owner_phone}
+                onChange={(e) => setOwnerEdit({ ...ownerEdit, owner_phone: e.target.value })} />
+              <input className="field" type="email" aria-label="Direct email" placeholder="Direct email" value={ownerEdit.owner_email}
+                onChange={(e) => setOwnerEdit({ ...ownerEdit, owner_email: e.target.value })} />
+              <input className="field" type="url" aria-label="LinkedIn profile" placeholder="Their LinkedIn profile link" value={ownerEdit.contact_linkedin}
+                onChange={(e) => setOwnerEdit({ ...ownerEdit, contact_linkedin: e.target.value })}
+                onKeyDown={(e) => e.key === "Enter" && void saveContact(ownerEdit, () => setOwnerEdit(null))} />
               <div style={{ display: "flex", gap: 6 }}>
-                <button type="button" className="btn btn-gold" onClick={() => void saveContact()}>Save</button>
-                <button type="button" className="btn" onClick={() => setContactEdit(null)}>Cancel</button>
+                <button type="button" className="btn btn-gold" onClick={() => void saveContact(ownerEdit, () => setOwnerEdit(null))}>Save</button>
+                <button type="button" className="btn" onClick={() => setOwnerEdit(null)}>Cancel</button>
               </div>
               <span className="hint">Anyone on the team can edit the contact. Saving also saves this business for the team.</span>
             </div>
-          )}
-          {contactMsg && <span className="bad-text" style={{ fontSize: 12.5 }}>{contactMsg}</span>}
-          {/* Every email and phone found, with where; pick the primary (saved to the business contact). */}
-          {foundPhones.map((p) => (
-            <div key={p.value} className="found-row">
-              <a href={`tel:${p.value.replace(/[^0-9+]/g, "")}`}>{p.value}</a> <span className="hint">{p.source}</span>{" "}
-              {samePhone(p.value, phone) ? (
-                <span className="primary-tag">primary</span>
-              ) : (
-                <button type="button" className="linkbtn" disabled={!me} onClick={() => void makePrimary({ phone: p.value })}>Make primary</button>
-              )}
-            </div>
-          ))}
-          {foundEmails.map((e) => (
-            <div key={e.value} className="found-row">
-              <a href={`mailto:${e.value}`}>{e.value}</a> <span className="hint">{e.source}</span>{" "}
-              {e.value.toLowerCase() === (email ?? "").toLowerCase() ? (
-                <span className="primary-tag">primary</span>
-              ) : (
-                <button type="button" className="linkbtn" disabled={!me} onClick={() => void makePrimary({ email: e.value })}>Make primary</button>
-              )}
-            </div>
-          ))}
-          {foundEmails.length ? null : l.contactPage ? (
-            <a href={l.contactPage} target="_blank" rel="noopener noreferrer">Contact page</a>
-          ) : l.website ? (
-            <a href={l.website} target="_blank" rel="noopener noreferrer">Website</a>
           ) : (
-            <span className="meta">No email or website found</span>
-          )}
-          <div className="li-row">
-            {ex?.contact_linkedin ? (
-              <a href={ex.contact_linkedin} target="_blank" rel="noopener noreferrer">LinkedIn: {ownerName ?? "profile"}</a>
-            ) : (
-              <a className="btn-mini" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">
-                Find {ownerName ? ownerName.split(" ")[0] : "the owner"} on LinkedIn
-              </a>
-            )}
-            {companyLi ? (
-              <a href={companyLi} target="_blank" rel="noopener noreferrer">Company LinkedIn</a>
-            ) : (
-              <a className="btn-mini" href={linkedinCompanySearch(l.name)} target="_blank" rel="noopener noreferrer">
-                Find company on LinkedIn
-              </a>
-            )}
-          </div>
-          <div>
-            {socialLinks.length ? (
-              <>
-                Social:{" "}
-                {socialLinks.map(([p, url], i) => (
-                  <span key={p}>
-                    {i > 0 && " · "}
-                    <a href={url} target="_blank" rel="noopener noreferrer">{p}</a>
-                  </span>
-                ))}
-              </>
-            ) : (
-              <span className="meta">{l.site || l.socialLinks ? "No social links on their website" : "Social links not checked"}</span>
-            )}
-          </div>
-          {!ex?.contact_linkedin && !companyLi && (
-            <span className="hint">Found them? Paste the links in Edit contact.</span>
-          )}
-          {flags.apollo && (
-            <FindOwner place={l} existing={ex} searchType={r.search_type} me={me} sourceDetail={sourceDetail} onSaved={onSaved} />
+            <>
+              <div className="c-row">
+                <span className="k">Name</span>
+                {ownerName ? <b>{ownerName}</b> : <span className="meta">Not found yet</span>}
+              </div>
+              <div className="c-row">
+                <span className="k">Title</span>
+                {ex?.title && ex.title !== SCAN_TITLE ? <span>{ex.title}</span> : <span className="meta">Not found yet</span>}
+              </div>
+              <div className="c-row">
+                <span className="k">Direct phone</span>
+                {ex?.owner_phone ? (
+                  <a href={`tel:${ex.owner_phone.replace(/[^0-9+]/g, "")}`}>{ex.owner_phone}</a>
+                ) : (
+                  <span className="meta">Not found yet</span>
+                )}
+              </div>
+              <div className="c-row">
+                <span className="k">Direct email</span>
+                {ex?.owner_email ? <a href={`mailto:${ex.owner_email}`}>{ex.owner_email}</a> : <span className="meta">Not found yet</span>}
+              </div>
+              <div className="c-row">
+                <span className="k">LinkedIn</span>
+                {ex?.contact_linkedin ? (
+                  <a href={ex.contact_linkedin} target="_blank" rel="noopener noreferrer">{ownerName ?? "Profile"}</a>
+                ) : (
+                  <>
+                    <span className="meta">Not found yet</span>
+                    <a className="btn-mini" href={linkedinPeopleSearch(ownerName, l.name)} target="_blank" rel="noopener noreferrer">
+                      Find on LinkedIn
+                    </a>
+                  </>
+                )}
+              </div>
+              {flags.apollo && (
+                <FindOwner place={l} existing={ex} searchType={r.search_type} me={me} sourceDetail={sourceDetail} onSaved={onSaved} />
+              )}
+            </>
           )}
         </div>
       </div>
 
+      {/* 6. Log a touch */}
       <div>
-        <div className="sec-title">Log an outcome</div>
-        <div className="talked-to" role="group" aria-label="Talked to">
-          <span className="hint">Talked to (optional, calls):</span>
-          {(["owner", "staff"] as const).map((k) => (
-            <button key={k} type="button" className="oc" aria-pressed={talkedTo === k} onClick={() => setTalkedTo(talkedTo === k ? null : k)}>
-              {k === "owner" ? "Owner" : "Staff"}
-            </button>
-          ))}
-        </div>
-        <OutcomeChips
-          big
-          disabled={!me}
-          confirm={stopNotice(ex)}
-          current={ex?.last_touch && !ex.project_id ? classifyTouch(ex.last_touch).key : null}
-          onSave={save}
-        />
+        <div className="sec-title">Log a touch</div>
+        {readOnly ? (
+          <div className="readonly-note">Owned by {ownerMember}. Ask an Admin to reassign.</div>
+        ) : (
+          <OutcomeChips
+            big
+            disabled={!me}
+            confirm={stopNotice(ex)}
+            current={ex?.last_touch && !ex.project_id ? classifyTouch(ex.last_touch).key : null}
+            onSave={save}
+          />
+        )}
         {liPrompt != null && (
           <div className="li-prompt">
             <span className="hint">
@@ -733,9 +940,18 @@ export default function BusinessDetail({
         )}
         {ask && (
           <div className="na-form">
+            {ask.kind === "talked_to" && (
+              <>
+                <span className="hint"><b style={{ color: "var(--bright)" }}>{ask.o.label}.</b> Who did you talk to?</span>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                  <button type="button" className="btn btn-gold" onClick={() => void saveTalkedTo("owner")}>Owner / decision maker</button>
+                  <button type="button" className="btn" onClick={() => void saveTalkedTo("staff")}>Front desk / staff</button>
+                </div>
+              </>
+            )}
             {ask.kind === "who_said_no" && (
               <>
-                <span className="hint"><b style={{ color: "var(--bright)" }}>Not interested.</b> Who said no?</span>
+                <span className="hint"><b style={{ color: "var(--bright)" }}>Not interested.</b> Who did you talk to?</span>
                 <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
                   <button type="button" className="btn btn-gold" onClick={() => void saveWhoSaidNo("owner")}>Owner / decision maker</button>
                   <button type="button" className="btn" onClick={() => void saveWhoSaidNo("staff")}>Front desk / staff</button>
@@ -774,7 +990,7 @@ export default function BusinessDetail({
         )}
         {naForm && (
           <div className="na-form">
-            <span className="hint"><b style={{ color: "var(--bright)" }}>Not available.</b> Reached someone, not the decision maker.</span>
+            <span className="hint"><b style={{ color: "var(--bright)" }}>Not available.</b> Who did you talk to? (not the decision maker)</span>
             <input className="field" autoFocus aria-label="Who you spoke with" placeholder="Who you spoke with (name)" value={naForm.spoke_with}
               onChange={(e) => setNaForm({ ...naForm, spoke_with: e.target.value })} />
             <input className="field" aria-label="Their role" placeholder="Their role, e.g. front desk" value={naForm.role}
@@ -791,127 +1007,22 @@ export default function BusinessDetail({
             </div>
           </div>
         )}
-        <div style={{ marginTop: 8 }}>
-          {ex?.last_touch || ex?.project_id ? (
-            <LatestOutcome existing={ex} memberName={memberName} />
-          ) : (
-            <p className="hint">No one has contacted this business yet.</p>
-          )}
-          {ex && <p className="hint" style={{ marginTop: 4 }}>Assigned to: {ex.owner ? memberName(ex.owner) : "nobody yet"}</p>}
-        </div>
-      </div>
-
-      {ex && (
-        <div>
-          <div className="sec-title">Next action</div>
-          <div className="next-form">
-            <input
-              className="field"
-              aria-label="Next action"
-              placeholder="Call back Tuesday…"
-              value={nextText}
-              disabled={!canEdit}
-              onChange={(e) => setNextText(e.target.value)}
-            />
-            <input
-              className="field"
-              type="datetime-local"
-              aria-label="Next action date"
-              value={nextAt}
-              disabled={!canEdit}
-              onChange={(e) => setNextAt(e.target.value)}
-            />
-            <button type="button" className="btn" disabled={!canEdit} onClick={() => void saveNext()}>
-              Save
+        {ex && !ex.project_id && !readOnly && (
+          <div style={{ marginTop: 8 }}>
+            <button type="button" className="btn btn-gold" style={{ width: "100%", minHeight: 44 }} disabled={!canEdit || !me}
+              onClick={() => void openConvert(ex.id)}>
+              Move to Interested
             </button>
           </div>
-          {!canEdit && <p className="hint" style={{ marginTop: 4 }}>{RLS_HINT}</p>}
-          {nextMsg && <p className={`hint ${nextMsg.tone === "error" ? "bad-text" : ""}`} style={{ marginTop: 4 }}>{nextMsg.text}</p>}
-        </div>
-      )}
-
-      {ex && (
-        <div>
-          {ex.project_id ? (
-            <a className="btn" style={{ width: "100%" }} href={`/project/${ex.project_id}`}>
-              Open project
-            </a>
-          ) : (
-            <>
-              <button
-                type="button"
-                className="btn btn-gold"
-                style={{ width: "100%", minHeight: 44 }}
-                disabled={!canEdit || !me}
-                onClick={() => void openConvert(ex.id)}
-              >
-                Move to Interested
-              </button>
-              {!canEdit && <p className="hint" style={{ marginTop: 4 }}>{RLS_HINT}</p>}
-            </>
-          )}
-          {convertError && <p className="error" style={{ marginTop: 6 }}>{convertError}</p>}
-        </div>
-      )}
-
-      {!dossier && (
-        <BookCall
-          members={members}
-          name={ownerName}
-          email={email}
-          onBooked={() => void save(outcomeByKey("booked_call"))}
-        />
-
-      )}
-
-      <div>
-        <div className="sec-title">What they need</div>
-        {SERVICE_ORDER.filter((s) => l.services.includes(s)).map((s) => (
-          <div key={s} className={`need ${s}`}>
-            <b>{SERVICE_LABELS[s]}</b>
-            <ul>
-              {l.tags[s].map((t) => (
-                <li key={t}>{t}</li>
-              ))}
-            </ul>
-          </div>
-        ))}
-        {l.services.length === 0 && <p className="meta">No gaps flagged.</p>}
+        )}
+        {convertError && <p className="error" style={{ marginTop: 6 }}>{convertError}</p>}
       </div>
-
-      {l.signals.length > 0 && (
-        <div className="info">
-          <span className="kicker">Worth knowing</span>
-          {l.signals.map((s, i) => (
-            <span key={s}>
-              {i > 0 && <br />}
-              {s}
-            </span>
-          ))}
-        </div>
-      )}
-      {l.complaints.length > 0 && (
-        <div className="info">
-          <span className="kicker">From their reviews</span>
-          {l.complaints.map((c, i) => (
-            <span key={c}>
-              {i > 0 && (
-                <>
-                  <br />
-                  <br />
-                </>
-              )}
-              “{c}”
-            </span>
-          ))}
-        </div>
-      )}
 
       {draftOpen && me && (
         <DraftEmail
           defaultKind={modeEmailKind(mode, placeForScripts)}
           ctx={{ place: placeForScripts, ownerName, gatekeeper, senderName: me.name, bookingLink: me.booking_link }}
-          to={email}
+          to={personEmail}
           onClose={() => setDraftOpen(false)}
           onMarkSent={async (subject, to) => {
             return (await doSave(outcomeByKey("emailed"), { summary: subject, details: to ? { to } : null })).error;
@@ -939,4 +1050,22 @@ export default function BusinessDetail({
         )}
     </>
   );
+}
+
+// "123 Main St, Wheaton, IL 60187, USA" -> "Wheaton".
+function cityOf(address: string): string | null {
+  const parts = (address || "").split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 3) return parts[parts.length - (/^usa$|^united states$/i.test(parts[parts.length - 1]) ? 3 : 2)] ?? null;
+  return parts.length === 2 ? parts[1] : null;
+}
+
+function daysFromNow(n: number): Date {
+  const d = new Date();
+  d.setDate(d.getDate() + n);
+  d.setHours(9, 0, 0, 0);
+  return d;
+}
+
+function followLabel(channel: string | null | undefined): string {
+  return channel === "email" ? "Follow up: email" : channel?.startsWith("linkedin") ? "Follow up: LinkedIn" : "Follow up: call";
 }

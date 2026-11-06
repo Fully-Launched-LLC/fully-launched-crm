@@ -167,15 +167,17 @@ export type LeadFinderRun = {
   finished_at: string | null;
 };
 
-// A result that already has a Sales record (leads row whose source is in
-// SALES_SOURCES, lib/sales/outcomes.ts): who owns it, its latest outcome.
+// A result that already has a business record (any leads row, any source):
+// who owns it, its latest outcome.
 export type ExistingLead = {
   id: string;
   company: string | null;
   contact_name: string | null; // owner name, editable in Sales
   title: string | null; // "Possible owner" = scan guess; anything else was typed by a person
-  email: string | null;
-  phone: string | null;
+  email: string | null; // business email (main inbox)
+  phone: string | null; // business main line
+  owner_email: string | null; // the owner's direct email (never from scans)
+  owner_phone: string | null; // the owner's direct line (never from scans)
   contact_linkedin: string | null; // the business owner's / contact's profile
   company_linkedin: string | null; // the business's company page
   status: string;

@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragOverlay,
@@ -13,7 +13,7 @@ import {
   type DragStartEvent,
 } from "@dnd-kit/core";
 import { createClient } from "@/lib/supabase/client";
-import { STAGES, type Stage } from "@/lib/theme";
+import { DEFAULT_STAGE, STAGES, type Stage } from "@/lib/theme";
 import type { Project, TeamMember } from "@/lib/types";
 import { branchValue, type BranchSlug } from "@/lib/branches";
 import { projectDetailHref } from "@/lib/projects";
@@ -32,13 +32,18 @@ export default function ProjectsKanban({
   initialProjects,
   teamMembers,
   tab,
+  showLost,
 }: {
   initialProjects: Project[];
   teamMembers: TeamMember[];
   tab: BranchSlug;
+  // Lost column is hidden unless the URL has ?lost=1 ("Show lost" toggle).
+  showLost: boolean;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -81,6 +86,20 @@ export default function ProjectsKanban({
     grouped.forEach((list) => list.sort(byUpdatedDesc));
     return grouped;
   }, [projects]);
+
+  const visibleStages = showLost
+    ? STAGES
+    : STAGES.filter((s) => s !== "Lost");
+  const lostCount = columns.get("Lost")?.length ?? 0;
+
+  // Keeps every other query param (view, from, ...) and only flips lost.
+  function toggleLost() {
+    const params = new URLSearchParams(searchParams?.toString() ?? "");
+    if (showLost) params.delete("lost");
+    else params.set("lost", "1");
+    const qs = params.toString();
+    router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
+  }
 
   const activeProject = activeId
     ? projects.find((p) => p.id === activeId) ?? null
@@ -134,8 +153,8 @@ export default function ProjectsKanban({
     );
   }
 
-  // Same insert as the Table's "+ New Project": a blank Leads project in the
-  // current tab's branch (none on the All tab), opened right away like
+  // Same insert as the Table's "+ New Project": a blank Interested project in
+  // the current tab's branch (none on the All tab), opened right away like
   // Duplicate. from/tab bring Back to this Kanban tab.
   async function addProject() {
     setCreating(true);
@@ -144,7 +163,7 @@ export default function ProjectsKanban({
       .insert({
         client_name: "New Project",
         branch: branchValue(tab),
-        stage: "Leads",
+        stage: DEFAULT_STAGE,
       })
       .select("id")
       .single();
@@ -164,14 +183,24 @@ export default function ProjectsKanban({
         <p className="text-sm text-neutral-500">
           {projects.length} project{projects.length === 1 ? "" : "s"}
         </p>
-        <button
-          type="button"
-          onClick={addProject}
-          disabled={creating}
-          className="rounded-md bg-header px-3 py-1.5 text-sm font-medium text-header-foreground disabled:opacity-50"
-        >
-          {creating ? "Creating…" : "+ New Project"}
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={toggleLost}
+            aria-pressed={showLost}
+            className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            {showLost ? "Hide lost" : `Show lost (${lostCount})`}
+          </button>
+          <button
+            type="button"
+            onClick={addProject}
+            disabled={creating}
+            className="rounded-md bg-header px-3 py-1.5 text-sm font-medium text-header-foreground disabled:opacity-50"
+          >
+            {creating ? "Creating…" : "+ New Project"}
+          </button>
+        </div>
       </div>
 
       {error && (
@@ -187,7 +216,7 @@ export default function ProjectsKanban({
         onDragCancel={endDrag}
       >
         <div className="flex gap-3 overflow-x-auto pb-4">
-          {STAGES.map((stage) => {
+          {visibleStages.map((stage) => {
             const list = columns.get(stage) ?? [];
             return (
               <KanbanColumn key={stage} stage={stage} count={list.length}>

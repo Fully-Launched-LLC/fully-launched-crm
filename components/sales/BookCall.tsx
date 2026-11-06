@@ -98,11 +98,14 @@ export default function BookCall({
   name,
   email,
   onBooked,
+  compact = false,
 }: {
   members: TeamMember[];
   name: string | null;
   email: string | null;
   onBooked: () => void;
+  // Inside the side preview's More menu: just the two buttons.
+  compact?: boolean;
 }) {
   const toast = useOutcomeToast();
   const host = members.find((m) => (m.email ?? "").trim().toLowerCase() === SALES_CALL_EMAIL);
@@ -133,7 +136,7 @@ export default function BookCall({
 
   return (
     <div className="book-call">
-      <div className="sec-title">Book a call with {hostName}</div>
+      {!compact && <div className="sec-title">Book a call with {hostName}</div>}
       <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
         <button
           type="button"
@@ -153,9 +156,11 @@ export default function BookCall({
           Copy link
         </button>
       </div>
-      <p className="hint" style={{ marginTop: 6 }}>
-        Finishing a booking here logs Booked call on this business.
-      </p>
+      {!compact && (
+        <p className="hint" style={{ marginTop: 6 }}>
+          Finishing a booking here logs Booked call on this business.
+        </p>
+      )}
     </div>
   );
 }

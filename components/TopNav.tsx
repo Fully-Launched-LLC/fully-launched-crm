@@ -11,7 +11,7 @@ import { useTimeClock } from "@/components/clock/useTimeClock";
 import { useDueFollowUps } from "@/components/sales/useDueFollowUps";
 
 // Sales tab badge: my follow-ups due today or overdue; links to that list.
-const DUE_HREF = "/sales?view=history&due=1";
+const DUE_HREF = "/leads?view=history&due=1";
 
 // Nav-only labels; routes, branch values, and page headings are unchanged
 // (e.g. /projects/ai still says "AI").
@@ -52,7 +52,7 @@ export default function TopNav({
   // read-only directory with booking links.
   const tabs = [
     { label: "Dashboard", href: "/dashboard" },
-    { label: "Sales", href: "/sales" },
+    { label: "Leads", href: "/leads" },
     { label: "Projects", href: PROJECTS_HREF },
     ...(isAdmin ? [{ label: "Transactions", href: "/transactions" }] : []),
     { label: "Contacts", href: "/contacts" },
@@ -117,8 +117,8 @@ export default function TopNav({
         {tabs.map((tab) => (
           <Link
             key={tab.href}
-            href={tab.href === "/sales" && due > 0 ? DUE_HREF : tab.href}
-            title={tab.href === "/sales" && due > 0 ? `${due} follow-up${due === 1 ? "" : "s"} due` : undefined}
+            href={tab.href === "/leads" && due > 0 ? DUE_HREF : tab.href}
+            title={tab.href === "/leads" && due > 0 ? `${due} follow-up${due === 1 ? "" : "s"} due` : undefined}
             className={`border-b-2 px-4 py-3 text-sm font-medium text-header-foreground transition-opacity ${
               isActive(tab.href)
                 ? "border-header-foreground opacity-100"
@@ -126,7 +126,7 @@ export default function TopNav({
             }`}
           >
             {tab.label}
-            {tab.href === "/sales" && dueBadge}
+            {tab.href === "/leads" && dueBadge}
           </Link>
         ))}
         {memberId && (
@@ -261,12 +261,12 @@ export default function TopNav({
               ) : (
                 <Link
                   key={tab.href}
-                  href={tab.href === "/sales" && due > 0 ? DUE_HREF : tab.href}
+                  href={tab.href === "/leads" && due > 0 ? DUE_HREF : tab.href}
                   onClick={() => setMenuOpen(false)}
                   className={`px-4 ${mobileLinkClass(isActive(tab.href))}`}
                 >
                   {tab.label}
-                  {tab.href === "/sales" && dueBadge}
+                  {tab.href === "/leads" && dueBadge}
                 </Link>
               )
             )}

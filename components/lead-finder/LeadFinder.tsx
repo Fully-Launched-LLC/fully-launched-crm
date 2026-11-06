@@ -29,7 +29,7 @@ import {
   sweepPlan,
 } from "@/lib/lead-finder/sweep";
 
-// Sales (/sales): Matteo's Lead Finder UI under one top bar with two views.
+// Leads (/leads, was /sales): Matteo's Lead Finder UI under one top bar with two views.
 //   Find:    launch pad + mission control on the CRM's Supabase-backed runs.
 //            POST /api/lead-finder/runs creates a run, this tab drives it
 //            with /step calls while the rocket launches, and ?run=<id> lets
@@ -652,11 +652,11 @@ export default function LeadFinder({
           <div className="brand">
             <div className="mark">FL</div>
             <div>
-              <b>Sales</b>
+              <b>Leads</b>
               <small>FullyLaunched</small>
             </div>
           </div>
-          <nav className="views" aria-label="Sales">
+          <nav className="views" aria-label="Leads">
             <button type="button" aria-current={tab === "find" ? "page" : undefined} onClick={() => showTab("find")}>
               Find
             </button>
@@ -670,7 +670,7 @@ export default function LeadFinder({
       {sessionLost && (
         <div className="session-banner" role="alert">
           <span>Your sign-in expired. Your search and results are saved.</span>
-          <a className="btn btn-gold" href={`/login?next=${encodeURIComponent(run ? `/sales?run=${run.id}` : "/sales")}`} target="_blank" rel="noopener">
+          <a className="btn btn-gold" href={`/login?next=${encodeURIComponent(run ? `/leads?run=${run.id}` : "/leads")}`} target="_blank" rel="noopener">
             Sign in again
           </a>
           <span className="hint">Opens in a new tab. Come back here afterwards and this page picks up where it was.</span>

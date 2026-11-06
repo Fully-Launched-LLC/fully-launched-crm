@@ -5,7 +5,7 @@ import type { SavedAudit } from "@/lib/lead-finder/types";
 import type { TeamMember } from "@/lib/types";
 import { LEAD_LIST_COLUMNS } from "@/lib/leads/list";
 import { existingFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
-import type { LatestTouch } from "@/lib/sales/outcomes";
+import { isOutcomeTouch, type LatestTouch } from "@/lib/sales/outcomes";
 import AuditReport from "@/components/lead-finder/AuditReport";
 import { asMode } from "@/lib/sales/searchModes";
 import { SalesFlagsProvider } from "@/components/sales/SalesFlags";
@@ -44,14 +44,16 @@ export default async function AuditPage({
       supabase.from("leads").select(LEAD_LIST_COLUMNS + ", scan_tags, audit").eq("id", searchParams.lead).maybeSingle(),
       supabase
         .from("lead_touches")
-        .select("channel, direction, outcome, summary, touched_by, touched_at, details")
+        .select("channel, direction, outcome, summary, touched_by, touched_at, details, event")
         .eq("lead_id", searchParams.lead)
         .order("touched_at", { ascending: false })
-        .limit(1),
+        .limit(20),
     ]);
     if (lead) {
       const row = lead as unknown as SalesLeadRow & { audit: SavedAudit | null };
-      existing = existingFromLead(row, ((touches ?? [])[0] as LatestTouch | undefined) ?? null);
+      // Latest outcome: notes / reassignments / releases don't count.
+      const latest = ((touches ?? []) as LatestTouch[]).find(isOutcomeTouch) ?? null;
+      existing = existingFromLead(row, latest);
       sourceDetail = row.source_detail ?? "Audit";
       const a = row.audit;
       if (a && a.version === 1 && a.place) saved = a;

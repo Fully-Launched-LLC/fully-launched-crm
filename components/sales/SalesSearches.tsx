@@ -5,7 +5,6 @@ import { createClient } from "@/lib/supabase/client";
 import type { TeamMember } from "@/lib/types";
 import type { LeadFinderRun } from "@/lib/lead-finder/types";
 import { bodyFromRun, describeSearch } from "@/lib/sales/runBody";
-import { SALES_SOURCES } from "@/lib/sales/outcomes";
 import { asMode, modeLabel } from "@/lib/sales/searchModes";
 import LocalDateTime from "@/components/LocalDateTime";
 
@@ -74,7 +73,6 @@ export default function SalesSearches({
         .from("leads")
         .select("google_place_id, last_touch_at")
         .in("google_place_id", places.slice(i, i + 200))
-        .in("source", SALES_SOURCES as unknown as string[])
         .not("last_touch_at", "is", null);
       (leads ?? []).forEach((l) => touched.set(l.google_place_id as string, l.last_touch_at as string));
     }

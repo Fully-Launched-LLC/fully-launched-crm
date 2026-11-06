@@ -48,6 +48,11 @@ export type Project = {
 
   commission_rate: number;
 
+  // The company's business record in the Leads tab (leads.id). Several
+  // projects can share one lead (same company, different engagements).
+  // On delete set null.
+  lead_id: string | null;
+
   stripe_customer_id: string | null;
   stripe_subscription_id: string | null;
   subscription_status: string | null;
@@ -135,6 +140,9 @@ export type Lead = {
   next_action: string | null;
   next_action_at: string | null;
   contact_linkedin: string | null; // migration 021
+  owner_email: string | null; // migration 031: the owner's direct email (never from scans)
+  owner_phone: string | null; // migration 031: the owner's direct line (never from scans)
+  owner_since: string | null; // migration 030: when the current owner got it
   company_linkedin: string | null;
   updated_at: string;
 };

@@ -1,4 +1,4 @@
-import { classifyTouch, type DisplayKey, type LatestTouch } from "@/lib/sales/outcomes";
+import { classifyTouch, isOutcomeTouch, type DisplayKey, type LatestTouch } from "@/lib/sales/outcomes";
 
 // History > Businesses sections (tabs with counts). A business can be in
 // more than one (e.g. Warm and Follow up today); Dead is in no other section.
@@ -55,7 +55,9 @@ export type TouchSummary = {
 
 const POSITIVE = ["replied", "interested", "meeting_booked", "meeting_held"];
 
-export function summarizeTouches(touches: LatestTouch[]): TouchSummary {
+export function summarizeTouches(all: LatestTouch[]): TouchSummary {
+  // Notes, reassignments and releases aren't outcomes.
+  const touches = all.filter(isOutcomeTouch);
   let ownerReached = false;
   let staffSaidNo = false;
   let gatekeeper: TouchSummary["gatekeeper"] = null;
@@ -76,8 +78,11 @@ export function summarizeTouches(touches: LatestTouch[]): TouchSummary {
 
 export type SectionInput = {
   summary: TouchSummary;
-  projectId: string | null;
+  // The company has a project still in the pipeline (projects.lead_id, any
+  // stage but Lost). Lost projects don't count: the company is back in History.
+  hasProject: boolean;
   nextActionAt: string | null;
+  // A project at Signed / In Progress / Subscriber / Complete.
   isClient: boolean;
 };
 
@@ -97,10 +102,10 @@ export function sectionsFor(b: SectionInput): SectionKey[] {
   const contacted = !!k && CONTACTED_KEYS.includes(k);
   if (contacted && due != null && due > eod) out.push("in_progress");
   if (contacted && due == null) out.push("no_next_step");
-  if ((k === "interested" || k === "booked_call") && !b.projectId) out.push("warm");
-  const reachOwner = b.summary.staffSaidNo && !b.summary.ownerReached && !b.projectId;
+  if ((k === "interested" || k === "booked_call") && !b.hasProject) out.push("warm");
+  const reachOwner = b.summary.staffSaidNo && !b.summary.ownerReached && !b.hasProject;
   if (reachOwner) out.push("reach_owner");
-  if (b.projectId) out.push("moved");
+  if (b.hasProject) out.push("moved");
   if (k === "not_now") out.push("not_now");
   if (!reachOwner && (k === "not_interested" || k === "bad_fit" || k === "staff_no")) out.push("not_interested");
   if (b.isClient) out.push("clients");

@@ -1,5 +1,6 @@
 import { isBranchSlug, branchLabel, type BranchSlug } from "@/lib/branches";
 import type { Project } from "@/lib/types";
+import { payDateOf } from "@/lib/timeclock";
 
 // ── duplicate ────────────────────────────────────────────────────────────
 // Fields never carried over to a copy: identity/timestamps (DB assigns new
@@ -9,6 +10,8 @@ import type { Project } from "@/lib/types";
 // are never touched. The copy DOES get its own contacts row — the
 // sync_contact_from_project trigger creates one on insert, same as any
 // other project (one contact row per project engagement, by design).
+// lead_id IS carried over: the copy is for the same company, so it points at
+// the same business record in the Leads tab.
 type DuplicateOmit =
   | "id"
   | "created_at"
@@ -67,4 +70,42 @@ export function projectOrigin(
     href: `/projects/${slug}${table ? "?view=table" : ""}`,
     label: `Back to ${branchLabel(slug)} (${table ? "Table" : "Kanban"})`,
   };
+}
+
+// ── remove from pipeline ────────────────────────────────────────────────
+// Reasons accepted by the remove_from_pipeline() RPC, exactly as the
+// database checks them. "Other" needs a note. The revisit reasons send the
+// business back to the Leads tab as Not now with a revisit date; the rest
+// as Not interested.
+export const REMOVE_REASONS = [
+  "Not interested",
+  "Just networking",
+  "Timing / not now",
+  "Budget",
+  "Went with someone else",
+  "Other",
+] as const;
+export type RemoveReason = (typeof REMOVE_REASONS)[number];
+
+export const REVISIT_REASONS: readonly RemoveReason[] = [
+  "Timing / not now",
+  "Just networking",
+];
+
+export const DEFAULT_REVISIT_MONTHS = 6;
+
+// Calendar date (YYYY-MM-DD) `months` from today in America/Chicago, same
+// default the RPC uses. The day is clamped to the target month's length
+// (Aug 31 + 6 months = Feb 28/29).
+export function revisitDateFromToday(
+  months = DEFAULT_REVISIT_MONTHS,
+  today: string = payDateOf()
+): string {
+  const [y, m, d] = today.split("-").map(Number);
+  const total = m - 1 + months;
+  const year = y + Math.floor(total / 12);
+  const month = total % 12; // 0-based
+  const lastDay = new Date(Date.UTC(year, month + 1, 0)).getUTCDate();
+  const day = Math.min(d, lastDay);
+  return `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
 }

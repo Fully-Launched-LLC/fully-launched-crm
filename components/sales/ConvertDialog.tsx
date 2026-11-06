@@ -15,6 +15,8 @@ import { LEAD_LIST_COLUMNS, type LeadListRow } from "@/lib/leads/list";
 //   note. The projects_sync_contact trigger creates the contact (needs a
 //   contact name); the Contacts page groups it with the same person's
 //   other projects.
+//   (projects.lead_id = this business, so every project of a company links
+//   back to its one record.)
 //   lead: project_id + status converted, then a touch records the move.
 // Multi-branch leads get one project for the chosen branch.
 
@@ -76,8 +78,10 @@ export default function ConvertDialog({
       .insert({
         client_name: lead.company ?? lead.name,
         contact_name: contactName.trim() || null,
-        email: lead.email,
-        phone: lead.phone,
+        // The project contact is the person: owner's direct email / phone first.
+        email: lead.owner_email ?? lead.email,
+        phone: lead.owner_phone ?? lead.phone,
+        lead_id: lead.id,
         source: projectSourceFor(lead.source, firstTouch),
         stage: "Interested",
         branch,

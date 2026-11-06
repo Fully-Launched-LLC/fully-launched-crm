@@ -9,7 +9,8 @@ import { ownerNameOf } from "@/lib/sales/owner";
 import { BRANCHES, type Branch } from "@/lib/theme";
 import { LEAD_LIST_COLUMNS } from "@/lib/leads/list";
 import { placeFromLead, resultFromLead, type SalesLeadRow } from "@/lib/sales/fromLead";
-import { BRANCH_TAG, SALES_SOURCES, classifyTouch, outcomeByKey, type LatestTouch, type OutcomeKey } from "@/lib/sales/outcomes";
+import { BRANCH_TAG, classifyTouch, outcomeByKey, type LatestTouch, type OutcomeKey } from "@/lib/sales/outcomes";
+import { ownedByOther } from "@/lib/leads/list";
 import { SECTIONS, sectionsFor, summarizeTouches, type SectionKey, type TouchSummary } from "@/lib/sales/sections";
 import { logOutcome, setNextAction } from "@/lib/sales/log";
 import { linkedinPeopleSearch } from "@/lib/sales/owner";
@@ -21,8 +22,9 @@ import { LatestOutcome } from "@/components/sales/OutcomeChips";
 import UnmatchedMeetings from "@/components/sales/UnmatchedMeetings";
 import { runsOnText } from "@/lib/lead-finder/software";
 
-// Sales > History > Businesses: every Sales business (leads with source in
-// SALES_SOURCES; legacy outreach never shows), split into sections
+// Leads > History > Businesses: every business record (all sources: Lead
+// Finder, personal network, Etsy, manual, referral, ...; one per company,
+// its projects linked by projects.lead_id), split into sections
 // (lib/sales/sections.ts) shown as tabs with counts. Mine / All (assigned
 // to me) applies to every section, with search, branch and dates (by the
 // latest outcome). Default section: Follow up today if it has rows, else
@@ -33,6 +35,7 @@ type Row = {
   latest: LatestTouch | null;
   summary: TouchSummary;
   isClient: boolean;
+  hasProject: boolean;
   sections: SectionKey[];
 };
 
@@ -43,7 +46,6 @@ const CLIENT_STAGES = ["Signed", "In Progress", "Complete", "Subscriber"];
 function whenOf(r: Row) {
   return r.latest?.touched_at ?? r.lead.created_at;
 }
-const digits10 = (p: string | null | undefined) => (p ?? "").replace(/\D/g, "").slice(-10);
 
 // YYYY-MM-DD of an ISO time in the viewer's timezone (date inputs are local).
 function localDay(iso: string) {
@@ -86,26 +88,24 @@ export default function SalesHistory({
 
   const load = useCallback(async () => {
     setError(null);
-    const sources = SALES_SOURCES as unknown as string[];
     const leads: SalesLeadRow[] = [];
     for (let p = 0; ; p += PAGE) {
       const { data, error: e } = await supabase
         .from("leads")
         .select(LEAD_LIST_COLUMNS + ", scan_tags")
-        .in("source", sources)
         .order("created_at", { ascending: false })
         .range(p, p + PAGE - 1);
       if (e) return setError(e.message);
       leads.push(...((data ?? []) as unknown as SalesLeadRow[]));
       if ((data ?? []).length < PAGE) break;
     }
-    // Every touch per Sales business, newest first.
+    // Every touch per business, newest first (timeline events included;
+    // summarizeTouches skips the ones that aren't outcomes).
     const touches = new Map<string, LatestTouch[]>();
     for (let p = 0; ; p += PAGE) {
       const { data, error: e } = await supabase
         .from("lead_touches")
-        .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, details, leads!inner(source)")
-        .in("leads.source", sources)
+        .select("lead_id, channel, direction, outcome, summary, touched_by, touched_at, details, event")
         .order("touched_at", { ascending: false })
         .range(p, p + PAGE - 1);
       if (e) return setError(e.message);
@@ -119,29 +119,32 @@ export default function SalesHistory({
           touched_by: t.touched_by,
           touched_at: t.touched_at,
           details: t.details ?? null,
+          event: t.event ?? null,
         });
       });
       if ((data ?? []).length < PAGE) break;
     }
-    // Clients: a project at a client stage with the same company name,
-    // email or phone.
-    const { data: projects } = await supabase.from("projects").select("client_name, email, phone, stage").in("stage", CLIENT_STAGES);
-    const names = new Set((projects ?? []).map((p) => (p.client_name ?? "").trim().toLowerCase()).filter(Boolean));
-    const emails = new Set((projects ?? []).map((p) => (p.email ?? "").trim().toLowerCase()).filter(Boolean));
-    const phones = new Set((projects ?? []).map((p) => digits10(p.phone)).filter((d) => d.length === 10));
+    // The company's projects (projects.lead_id): in the pipeline = any stage
+    // but Lost (Moved to project); a client = Signed and later (Clients).
+    const { data: projects } = await supabase.from("projects").select("lead_id, stage").not("lead_id", "is", null);
+    const active = new Set<string>();
+    const clients = new Set<string>();
+    (projects ?? []).forEach((p) => {
+      if (p.stage !== "Lost") active.add(p.lead_id as string);
+      if (CLIENT_STAGES.includes(p.stage)) clients.add(p.lead_id as string);
+    });
     setRows(
       leads.map((lead) => {
         const summary = summarizeTouches(touches.get(lead.id) ?? []);
-        const isClient =
-          names.has((lead.company ?? lead.name ?? "").trim().toLowerCase()) ||
-          (!!lead.email && emails.has(lead.email.trim().toLowerCase())) ||
-          phones.has(digits10(lead.phone));
+        const isClient = clients.has(lead.id);
+        const hasProject = active.has(lead.id) || (!!lead.project_id && !(projects ?? []).some((p) => p.lead_id === lead.id));
         return {
           lead,
           latest: summary.latest,
           summary,
           isClient,
-          sections: sectionsFor({ summary, projectId: lead.project_id, nextActionAt: lead.next_action_at, isClient }),
+          hasProject,
+          sections: sectionsFor({ summary, hasProject, nextActionAt: lead.next_action_at, isClient }),
         };
       })
     );
@@ -269,12 +272,16 @@ export default function SalesHistory({
                     title: ex.title,
                     email: ex.email,
                     phone: ex.phone,
+                    owner_email: ex.owner_email,
+                    owner_phone: ex.owner_phone,
+                    owner: ex.owner,
                     contact_linkedin: ex.contact_linkedin,
                     company_linkedin: ex.company_linkedin,
                   },
                   latest: ex.last_touch,
                   summary: r.summary,
                   isClient: r.isClient,
+                  hasProject: r.hasProject,
                   sections: r.sections,
                 }
               : r
@@ -296,14 +303,14 @@ export default function SalesHistory({
 
   function exportCSV() {
     if (!visible.length) return;
-    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Runs On", "Next Action", "Next Action Date", "Phone", "Email", "Business Owner LinkedIn", "Company LinkedIn", "Instagram", "Facebook", "TikTok", "YouTube", "Website", "Address", "Google Maps Link"];
+    const headers = ["Business", "Business Owner / Contact", "Contact Title", "Assigned To", "Latest Outcome", "Outcome By", "Outcome Date", "Outcome Note", "Branches", "Priority", "Website Score", "Need Score", "Runs On", "Next Action", "Next Action Date", "Business Phone", "Business Email", "Owner Phone", "Owner Email", "Business Owner LinkedIn", "Company LinkedIn", "Instagram", "Facebook", "TikTok", "YouTube", "Website", "Address", "Google Maps Link"];
     const out = visible.map((r) => {
       const l = r.lead;
       const t = r.latest;
-      const label = l.project_id ? "Moved to Interested" : t ? classifyTouch(t).label : "";
+      const label = r.hasProject ? "Moved to Interested" : t ? classifyTouch(t).label : "";
       const place = placeFromLead(l);
       return [l.company ?? l.name, ownerNameOf(place, { ...resultFromLead(l, t).existing! }) ?? "", l.title && l.title !== "Possible owner" ? l.title : "", l.owner ? memberName(l.owner) : "", label, t ? memberName(t.touched_by) : "", t ? t.touched_at.slice(0, 10) : "", t?.summary ?? "",
-        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", runsOnText(place.tech), l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.email ?? "",
+        (l.branch_fit ?? []).join("; "), l.priority_score ?? "", websiteScore(place).score, l.lead_score ?? "", runsOnText(place.tech), l.next_action ?? "", l.next_action_at?.slice(0, 10) ?? "", l.phone ?? "", l.email ?? "", l.owner_phone ?? "", l.owner_email ?? "",
         l.contact_linkedin ?? "", l.company_linkedin ?? place.socialLinks?.LinkedIn ?? "",
         place.socialLinks?.Instagram ?? "", place.socialLinks?.Facebook ?? "", place.socialLinks?.TikTok ?? "", place.socialLinks?.YouTube ?? "",
         l.website ?? "", l.address ?? "", l.maps_url ?? ""];
@@ -312,7 +319,7 @@ export default function SalesHistory({
     const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8;" }));
     const a = document.createElement("a");
     a.href = url;
-    a.download = `fullylaunched-sales-history-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.download = `fullylaunched-leads-history-${new Date().toISOString().slice(0, 10)}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }
@@ -423,10 +430,8 @@ export default function SalesHistory({
                           </button>
                           <div className="meta">{[l.category, l.city].filter(Boolean).join(" · ")}</div>
                           {r.isClient && <span className="badge-mkt" style={{ marginLeft: 0 }}>Client</span>}
-                          {tab === "moved" && l.project_id && (
-                            <div onClick={(e) => e.stopPropagation()}>
-                              <a href={`/project/${l.project_id}`}>Open project</a>
-                            </div>
+                          {l.owner && l.owner !== me?.id && (
+                            <span className="badge-owned">Owned by {memberName(l.owner)}</span>
                           )}
                           {tab === "reach_owner" && (
                             <div className="row-actions" onClick={(e) => e.stopPropagation()}>
@@ -440,14 +445,18 @@ export default function SalesHistory({
                               <a className="btn-mini" href={linkedinPeopleSearch(l.contact_name, l.company ?? l.name)} target="_blank" rel="noopener noreferrer">
                                 Find on LinkedIn
                               </a>
-                              <button type="button" className="btn-mini" disabled={!me} onClick={() => void quickLog(r, "connection_sent")}>Connection sent</button>
-                              <button type="button" className="btn-mini" disabled={!me} onClick={() => void quickLog(r, "visited")}>Visited</button>
+                              {!ownedByOther(l, me) && (
+                                <>
+                                  <button type="button" className="btn-mini" disabled={!me} onClick={() => void quickLog(r, "connection_sent")}>Connection sent</button>
+                                  <button type="button" className="btn-mini" disabled={!me} onClick={() => void quickLog(r, "visited")}>Visited</button>
+                                </>
+                              )}
                               {flags.apollo && (
                                 <button type="button" className="btn-mini" onClick={() => open(l.id)}>Find owner contact</button>
                               )}
                             </div>
                           )}
-                          {tab === "no_next_step" && (
+                          {tab === "no_next_step" && !ownedByOther(l, me) && (
                             <div className="row-actions" onClick={(e) => e.stopPropagation()}>
                               {followFor === l.id ? (
                                 <>
@@ -467,10 +476,10 @@ export default function SalesHistory({
                           {rowMsg?.id === l.id && <div className="bad-text" style={{ fontSize: 12 }}>{rowMsg.text}</div>}
                         </td>
                         <td>
-                          {r.latest || l.project_id ? (
+                          {r.latest || r.hasProject ? (
                             <LatestOutcome
                               existing={{
-                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, email: l.email, phone: l.phone, contact_linkedin: l.contact_linkedin, company_linkedin: l.company_linkedin, status: l.status, owner: l.owner, project_id: l.project_id,
+                                id: l.id, company: l.company, contact_name: l.contact_name, title: l.title, email: l.email, phone: l.phone, owner_email: l.owner_email, owner_phone: l.owner_phone, contact_linkedin: l.contact_linkedin, company_linkedin: l.company_linkedin, status: l.status, owner: l.owner, project_id: r.hasProject ? l.project_id : null,
                                 next_action: l.next_action, next_action_at: l.next_action_at, last_touch: r.latest, matched_on: "google_place_id",
                               }}
                               memberName={memberName}
@@ -515,7 +524,7 @@ export default function SalesHistory({
                   <tr>
                     <td colSpan={6}>
                       <div className="empty-list">
-                        {rows.length ? "Nothing in this section." : "Nothing yet. Outcomes logged in Find show up here."}
+                        {rows.length ? "Nothing in this section." : "Nothing yet. Businesses from Find, projects and imports show up here."}
                       </div>
                     </td>
                   </tr>
@@ -544,7 +553,7 @@ export default function SalesHistory({
             <>
               <div className="kicker">Business</div>
               <p className="meta">
-                {selectedId && rows ? "That business isn't in Sales." : "Select a business to see its timeline and next steps."}
+                {selectedId && rows ? "That business isn't in Leads." : "Select a business to see its timeline and next steps."}
               </p>
             </>
           )}

@@ -5,12 +5,8 @@ import { TOUCH_CHANNEL_LABELS, TOUCH_OUTCOME_LABELS } from "@/lib/leads/labels";
 // one-click outcomes. No schema of its own: a business is a leads row, an
 // outcome is a lead_touches row (migration 017 channels/outcomes).
 
-// leads.source values shown anywhere in Sales (search matches, History).
-// Add "apify", "etsy", ... here when those imports start; nothing else
-// changes. Legacy outreach (personal_network, etsy, manual, ...) stays out.
-export const SALES_SOURCES = ["lead_finder"] as const;
-export const isSalesSource = (s: string | null | undefined) =>
-  !!s && (SALES_SOURCES as readonly string[]).includes(s);
+// Every leads row shows in Leads (search matches and History), whatever its
+// source (lead_finder, personal_network, etsy, manual, referral, ...).
 
 export type OutcomeKey =
   | "no_answer"
@@ -57,7 +53,8 @@ export type Outcome = {
   //   who_said_no:   Owner / decision maker, or Front desk / staff
   //   revisit:       revisit date (1, 3, 6 months, pick a date)
   //   dead:          reason
-  form?: "not_available" | "who_said_no" | "revisit" | "dead";
+  //   talked_to:     who did you talk to (Owner / Staff -> details.talked_to)
+  form?: "not_available" | "who_said_no" | "revisit" | "dead" | "talked_to";
   // The toast offers a follow-up (next_action "Follow up: call" / "email" / "LinkedIn").
   followUp?: "call" | "email" | "linkedin";
   // Side preview: opens the Draft email modal instead of saving; its "Mark
@@ -75,7 +72,7 @@ export const OUTCOMES: Outcome[] = [
   // Reached someone, not the decision maker. details {spoke_with, role, email}; the note is what they said.
   { key: "not_available", label: "Not available", group: "call", channel: "cold_call", direction: "outbound", outcome: "not_available", form: "not_available", followUp: "call" },
   { key: "visited", label: "Visited", group: "call", channel: "in_person", direction: "outbound", outcome: "sent", followUp: "call" },
-  { key: "interested", label: "Interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "interested", opensMove: true },
+  { key: "interested", label: "Interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "interested", opensMove: true, form: "talked_to" },
   // details.said_no_by owner | staff (required). Staff + owner not reached -> Reach the owner.
   { key: "not_interested", label: "Not interested", group: "call", channel: "cold_call", direction: "inbound", outcome: "not_interested", form: "who_said_no" },
   // Migration 029. Revisit date -> next_action "Revisit" + next_action_at.
@@ -116,16 +113,34 @@ export type LatestTouch = {
   touched_at: string;
   // Migration 023: Not available {spoke_with, role, email}, Emailed {to}.
   details?: TouchDetails | null;
+  // Migration 030: timeline entries that aren't outreach (note, reassigned,
+  // released, removed_from_pipeline, project_lost). Null for real touches.
+  event?: string | null;
 };
+
+// Does this touch count as the business's latest outcome? Notes,
+// reassignments and releases don't; Removed from pipeline / Project lost do
+// when they carry an outcome (not_now / not_interested).
+export function isOutcomeTouch(t: Pick<LatestTouch, "event" | "outcome">): boolean {
+  return !t.event || !!t.outcome;
+}
 
 export type TouchDetails = {
   spoke_with?: string;
   role?: string;
   email?: string;
-  to?: string;
+  to?: string | null; // Emailed: address; reassigned: new owner id
   said_no_by?: "owner" | "staff"; // Not interested
-  talked_to?: "owner" | "staff"; // optional on call outcomes
+  talked_to?: "owner" | "staff"; // Interested / older call outcomes
   dead_reason?: string; // Dead
+  // Migration 030/033 events
+  reason?: string; // removed_from_pipeline
+  note?: string | null;
+  project_name?: string;
+  branch?: string | null;
+  revisit?: string | null;
+  from?: string | null; // reassigned / released: previous owner id
+  from_project?: string;
 };
 
 // A touch back to the outcome that logged it (also reads touches logged
@@ -197,6 +212,32 @@ export function describeTouch(
   t: LatestTouch,
   memberName: (id: string | null) => string
 ): { lead: string; outcome: string | null; key: DisplayKey; detail: string | null; who: string } {
+  // Timeline entries that aren't outreach (migrations 030, 032, 033).
+  if (t.event) {
+    const d = t.details ?? {};
+    const date = shortDate(t.touched_at);
+    const who = t.touched_by ? memberName(t.touched_by) : "automatic";
+    const name = (id: string | null | undefined) => (id ? memberName(id) : "nobody");
+    switch (t.event) {
+      case "reassigned":
+        return { lead: `Reassigned ${date}`, outcome: null, key: "other", detail: `${name(d.from)} to ${name(d.to)}`, who };
+      case "released":
+        return { lead: `Released ${date}`, outcome: null, key: "other", detail: `was ${name(d.from)}`, who };
+      case "removed_from_pipeline":
+        return {
+          lead: `Removed from pipeline ${date}`,
+          outcome: d.reason ?? null,
+          key: t.outcome ? classifyTouch(t).key : "other",
+          // "Removed from pipeline Nov 6 · Just networking · <note> · Luke"
+          detail: [d.note, d.revisit ? `revisit ${shortDate(d.revisit + "T12:00:00")}` : null].filter(Boolean).join(" · ") || null,
+          who,
+        };
+      case "project_lost":
+        return { lead: `Project lost ${date}`, outcome: null, key: "not_interested", detail: d.branch ?? null, who };
+      default:
+        return { lead: `Note ${date}`, outcome: null, key: "other", detail: null, who };
+    }
+  }
   const c = classifyTouch(t);
   const verb = CHANNEL_VERB[t.channel] ?? "Contacted";
   const lead = `${verb} ${shortDate(t.touched_at)}`;

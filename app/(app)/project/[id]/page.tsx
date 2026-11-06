@@ -24,7 +24,6 @@ export default async function ProjectDetailPage({
     { data: tasks },
     currentMember,
     { data: callLinks },
-    { data: sourceLeads },
   ] = await Promise.all([
     supabase.from("projects").select("*").eq("id", params.id).maybeSingle(),
     supabase.from("team_members").select("*").order("name"),
@@ -36,31 +35,19 @@ export default async function ProjectDetailPage({
     getCurrentTeamMember(),
     // Cal.com calls linked to this project (migration 012).
     supabase.from("call_projects").select("call:calls(*)").eq("project_id", params.id),
-    // The lead(s) this project was converted from (Move to Interested).
-    supabase
-      .from("leads")
-      .select("id, company, source, source_detail, found_by, created_at, audit")
-      .eq("project_id", params.id),
   ]);
-  let leadHistory: ProjectLeadHistory | null = null;
-  if (sourceLeads?.length) {
-    const { data: touches } = await supabase
-      .from("lead_touches")
-      .select("id, lead_id, channel, direction, outcome, summary, touched_by, touched_at")
-      .in("lead_id", sourceLeads.map((l) => l.id))
-      .order("touched_at", { ascending: false });
-    leadHistory = {
-      leads: sourceLeads as ProjectLeadHistory["leads"],
-      touches: (touches ?? []) as ProjectLeadHistory["touches"],
-    };
-  }
-  const calls = ((callLinks ?? []) as unknown as { call: Call | null }[])
-    .map((l) => l.call)
-    .filter((c): c is Call => c !== null);
 
   if (!project) {
     notFound();
   }
+
+  const leadHistory = await loadLeadHistory(
+    supabase,
+    project as Project
+  );
+  const calls = ((callLinks ?? []) as unknown as { call: Call | null }[])
+    .map((l) => l.call)
+    .filter((c): c is Call => c !== null);
 
   return (
     <div className="p-8">
@@ -69,10 +56,9 @@ export default async function ProjectDetailPage({
         teamMembers={(teamMembers ?? []) as TeamMember[]}
         initialTasks={(tasks ?? []) as ProjectTask[]}
         back={projectOrigin(searchParams.from, searchParams.tab)}
-        // UI only — the real gate is the "admin or manager delete" RLS policy (migration 007)
-        canDelete={
-          currentMember?.role === "Admin" || currentMember?.role === "Manager"
-        }
+        // UI only. The real gate is the projects "admin delete" RLS policy
+        // (Admin only; was Admin or Manager before).
+        canDelete={currentMember?.role === "Admin"}
         // UI only — the invoice route re-checks the role server-side.
         canInvoice={canSendInvoices(currentMember?.role)}
         stripeDashboardBase={stripeDashboardBase()}
@@ -82,4 +68,42 @@ export default async function ProjectDetailPage({
       />
     </div>
   );
+}
+
+const LEAD_COLUMNS =
+  "id, company, source, source_detail, found_by, created_at, audit";
+
+// The company's business record (Leads tab): projects.lead_id, else the
+// older link leads.project_id = this project. Plus the touch timeline and
+// any other projects that share the same lead_id (same company).
+async function loadLeadHistory(
+  supabase: ReturnType<typeof createClient>,
+  project: Project
+): Promise<ProjectLeadHistory | null> {
+  const [{ data: leads }, { data: otherProjects }] = await Promise.all([
+    project.lead_id
+      ? supabase.from("leads").select(LEAD_COLUMNS).eq("id", project.lead_id)
+      : supabase.from("leads").select(LEAD_COLUMNS).eq("project_id", project.id),
+    project.lead_id
+      ? supabase
+          .from("projects")
+          .select("id, client_name, branch, stage")
+          .eq("lead_id", project.lead_id)
+          .neq("id", project.id)
+          .order("created_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
+  ]);
+  if (!leads?.length) return null;
+
+  const { data: touches } = await supabase
+    .from("lead_touches")
+    .select("id, lead_id, channel, direction, outcome, summary, touched_by, touched_at")
+    .in("lead_id", leads.map((l) => l.id))
+    .order("touched_at", { ascending: false });
+
+  return {
+    leads: leads as ProjectLeadHistory["leads"],
+    touches: (touches ?? []) as ProjectLeadHistory["touches"],
+    otherProjects: (otherProjects ?? []) as ProjectLeadHistory["otherProjects"],
+  };
 }

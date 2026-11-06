@@ -14,7 +14,7 @@ export default function RecentLeadsCard({ leads }: { leads: Lead[] }) {
           Recently Added Leads
         </h2>
         <Link
-          href="/sales?view=history"
+          href="/leads?view=history"
           className="text-xs font-medium text-neutral-500 hover:text-foreground hover:underline"
         >
           View all

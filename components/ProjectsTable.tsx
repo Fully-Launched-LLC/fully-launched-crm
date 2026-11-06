@@ -9,6 +9,7 @@ import {
   BRANCHES,
   BRANCH_COLORS,
   SOURCES,
+  DEFAULT_STAGE,
   STAGES,
   STAGE_COLORS,
   type Branch,
@@ -129,7 +130,7 @@ export default function ProjectsTable({
     }
   }
 
-  // Creates a blank Leads project in this tab's branch and opens it, same
+  // Creates a blank Interested project in this tab's branch and opens it, same
   // as Duplicate — the user fills it in on the Manage Project page. The
   // from/tab params bring Back to this Table tab.
   async function addRow() {
@@ -139,7 +140,7 @@ export default function ProjectsTable({
       .insert({
         client_name: "New Project",
         branch: fixedBranch,
-        stage: "Leads",
+        stage: DEFAULT_STAGE,
       })
       .select("id")
       .single();

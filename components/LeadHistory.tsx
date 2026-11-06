@@ -1,10 +1,14 @@
+import Link from "next/link";
 import type { TeamMember } from "@/lib/types";
+import { BRANCH_COLORS, STAGE_COLORS, type Branch, type Stage } from "@/lib/theme";
 import type { SavedAudit } from "@/lib/lead-finder/types";
 import { TOUCH_CHANNEL_LABELS, TOUCH_OUTCOME_LABELS, sourceLabel } from "@/lib/leads/labels";
 import LocalDateTime from "@/components/LocalDateTime";
 
-// "Lead history" on the Manage Project page: the lead(s) this project was
-// converted from (leads.project_id), their touch timeline and saved audit.
+// "Lead history" on the Manage Project page: the company's business record
+// in the Leads tab (projects.lead_id, else the older leads.project_id link),
+// its touch timeline and saved audit, and other projects for the same
+// company (same lead_id).
 
 export type ProjectLeadHistory = {
   leads: {
@@ -26,6 +30,12 @@ export type ProjectLeadHistory = {
     touched_by: string | null;
     touched_at: string;
   }[];
+  otherProjects: {
+    id: string;
+    client_name: string;
+    branch: Branch | null;
+    stage: Stage;
+  }[];
 };
 
 export default function LeadHistory({ history, teamMembers }: { history: ProjectLeadHistory; teamMembers: TeamMember[] }) {
@@ -38,9 +48,9 @@ export default function LeadHistory({ history, teamMembers }: { history: Project
         return (
           <div key={l.id} className="mt-3 space-y-2 text-sm">
             <p className="text-neutral-600">
-              From lead{" "}
-              <a href={`/sales?lead=${l.id}`} className="font-medium text-accent hover:underline">
-                {l.company ?? "lead"}
+              Business record{" "}
+              <a href={`/leads?lead=${l.id}`} className="font-medium text-accent hover:underline">
+                {l.company ?? "Open in Leads"}
               </a>
               {" · "}
               {sourceLabel(l.source)}
@@ -74,6 +84,30 @@ export default function LeadHistory({ history, teamMembers }: { history: Project
           </div>
         );
       })}
+      {history.otherProjects.length > 0 && (
+        <div className="mt-3">
+          <p className="text-xs font-semibold uppercase tracking-wide text-neutral-500">
+            Other projects for this company
+          </p>
+          <ul className="mt-1 space-y-1">
+            {history.otherProjects.map((p) => (
+              <li key={p.id} className="flex flex-wrap items-center gap-2 text-sm">
+                <Link href={`/project/${p.id}`} className="font-medium text-accent hover:underline">
+                  {p.client_name}
+                </Link>
+                {p.branch && (
+                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${BRANCH_COLORS[p.branch]}`}>
+                    {p.branch}
+                  </span>
+                )}
+                <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STAGE_COLORS[p.stage] ?? ""}`}>
+                  {p.stage}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
       {history.touches.length === 0 ? (
         <p className="mt-3 text-sm text-neutral-400">No touches were logged on the lead.</p>
       ) : (

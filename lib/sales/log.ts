@@ -63,6 +63,8 @@ export async function ensureRecords(
           title: it.place.ownerName ? "Possible owner" : null,
           email: it.place.emails[0] ?? null,
           phone: it.place.phone && it.place.phone !== "No phone listed" ? it.place.phone : null,
+          owner_email: null,
+          owner_phone: null,
           contact_linkedin: null,
           company_linkedin: it.place.socialLinks?.LinkedIn ?? null,
           status: "new",
@@ -99,9 +101,37 @@ export async function logOutcome(
   extra?: { summary?: string | null; details?: TouchDetails | null }
 ): Promise<LogResult> {
   const { records, failed } = await ensureRecords(supabase, meId, items, sourceDetail);
-  const keys = items.map((x) => x.key).filter((k) => records.has(k));
+  let keys = items.map((x) => x.key).filter((k) => records.has(k));
   const it = (k: string) => items.find((x) => x.key === k);
   if (!keys.length) return { saved: [], failed };
+
+  // One salesperson per business (migration 030): logging needs it to be
+  // unassigned, mine, or me Admin/Manager (RLS on lead_touches). One refused
+  // row would fail the whole insert, so check owners first and leave the
+  // others out with a reason. The owner shown is the one in the database.
+  const { data: owners } = await supabase
+    .from("leads")
+    .select("id, owner")
+    .in("id", keys.map((k) => records.get(k)!.existing.id));
+  const ownerOf = new Map((owners ?? []).map((o) => [o.id as string, (o.owner as string | null) ?? null]));
+  keys.forEach((k) => {
+    const rec = records.get(k)!.existing;
+    if (ownerOf.has(rec.id)) rec.owner = ownerOf.get(rec.id) ?? null;
+  });
+  if (keys.some((k) => { const o = records.get(k)!.existing.owner; return !!o && o !== meId; })) {
+    const { data: isManager } = await supabase.rpc("is_admin_or_manager");
+    if (!isManager) {
+      keys = keys.filter((k) => {
+        const o = records.get(k)!.existing.owner;
+        if (o && o !== meId) {
+          failed.push({ key: k, reason: "Owned by someone else. Ask an Admin to reassign." });
+          return false;
+        }
+        return true;
+      });
+      if (!keys.length) return { saved: [], failed };
+    }
+  }
 
   const { data, error } = await supabase
     .from("lead_touches")
@@ -142,7 +172,8 @@ export async function logOutcome(
       key: k,
       prev: created ? null : rec,
       touchId: id,
-      existing: { ...rec, status: statusAfter(rec.status, outcome), last_touch: touch },
+      // The touch trigger assigns an unassigned business to whoever logged it.
+      existing: { ...rec, owner: rec.owner ?? meId, status: statusAfter(rec.status, outcome), last_touch: touch },
     });
   });
   return { saved, failed };
@@ -184,9 +215,11 @@ export async function undoOutcome(
       continue;
     }
     const back: ExistingLead = s.prev ?? { ...s.existing, status: "new", last_touch: null };
+    // The click auto-assigned it (it was unassigned): give it back.
+    const unassign = !!s.prev && !s.prev.owner && !!s.existing.owner;
     await supabase
       .from("leads")
-      .update({ status: back.status, last_touch_at: back.last_touch?.touched_at ?? null })
+      .update({ status: back.status, last_touch_at: back.last_touch?.touched_at ?? null, ...(unassign ? { owner: null } : {}) })
       .eq("id", back.id);
     restored.push({ key: s.key, existing: back });
   }
@@ -212,6 +245,8 @@ export type ContactFields = {
   title?: string | null;
   email?: string | null;
   phone?: string | null;
+  owner_email?: string | null;
+  owner_phone?: string | null;
   contact_linkedin?: string | null;
   company_linkedin?: string | null;
 };
@@ -242,7 +277,7 @@ export async function saveBusinessContact(
     const { data, error } = await supabase.rpc("update_business_contact", { p_lead_id: rec.id, p_fields: clean });
     if (error?.code === "P0002" && attempt === 0) continue; // record gone: save it again, retry
     if (error) return { existing: rec, error: error.message };
-    const d = data as Pick<ExistingLead, "contact_name" | "title" | "email" | "phone" | "contact_linkedin" | "company_linkedin">;
+    const d = data as Pick<ExistingLead, "contact_name" | "title" | "email" | "phone" | "owner_email" | "owner_phone" | "contact_linkedin" | "company_linkedin">;
     return {
       existing: {
         ...rec,
@@ -250,6 +285,8 @@ export async function saveBusinessContact(
         title: d.title,
         email: d.email,
         phone: d.phone,
+        owner_email: d.owner_email,
+        owner_phone: d.owner_phone,
         contact_linkedin: d.contact_linkedin,
         company_linkedin: d.company_linkedin,
       },

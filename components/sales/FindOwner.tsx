@@ -11,8 +11,9 @@ import { saveBusinessContact } from "@/lib/sales/log";
 // Looks up people at the business's website domain with owner-type titles
 // (POST /api/sales/apollo, logged in enrichment_lookups). Emails Apollo
 // hasn't unlocked can be revealed one at a time (one Apollo credit each).
-// "Use as business owner" saves name, title, email, phone and LinkedIn
-// through update_business_contact (any team member; creates the record).
+// "Use as business owner" saves name, title, the owner's direct email and
+// phone (owner_email / owner_phone, migration 031) and LinkedIn through
+// update_business_contact (any team member; creates the record).
 
 type Person = { id: string; name: string; title: string | null; email: string | null; phone: string | null; linkedin: string | null };
 
@@ -84,8 +85,8 @@ export default function FindOwner({
     setBusy("use-" + p.id);
     setMsg(null);
     const fields: Record<string, string> = { contact_name: p.name, title: p.title || "Owner" };
-    if (p.email) fields.email = p.email;
-    if (p.phone) fields.phone = p.phone;
+    if (p.email) fields.owner_email = p.email;
+    if (p.phone) fields.owner_phone = p.phone;
     if (p.linkedin) fields.contact_linkedin = p.linkedin;
     const res = await saveBusinessContact(createClient(), me.id, { key: place.id, place, searchType, existing }, fields, sourceDetail);
     setBusy(null);

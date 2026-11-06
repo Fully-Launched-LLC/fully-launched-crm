@@ -16,7 +16,7 @@ export default async function ProjectsPage({
   searchParams,
 }: {
   params: { branch: string };
-  searchParams: { view?: string };
+  searchParams: { view?: string; lost?: string };
 }) {
   if (!isBranchSlug(params.branch)) {
     notFound();
@@ -59,6 +59,7 @@ export default async function ProjectsPage({
             initialProjects={(projects ?? []) as Project[]}
             teamMembers={(teamMembers ?? []) as TeamMember[]}
             tab={slug}
+            showLost={searchParams.lost === "1"}
           />
         ) : (
           <ProjectsTable
