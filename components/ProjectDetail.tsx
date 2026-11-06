@@ -28,6 +28,7 @@ import BookCallSection from "@/components/BookCallSection";
 import CallHistory from "@/components/CallHistory";
 import LeadHistory, { type ProjectLeadHistory } from "@/components/LeadHistory";
 import RemoveFromPipelineDialog from "@/components/RemoveFromPipelineDialog";
+import CompanySuggestion from "@/components/CompanySuggestion";
 import type { Call } from "@/lib/calls";
 import { branchChangePatch } from "@/lib/channels";
 import {
@@ -266,7 +267,7 @@ export default function ProjectDetail({
           value={project.stage}
           options={STAGES}
           colors={STAGE_COLORS}
-          onCommit={(v) => update({ stage: v as Stage })}
+          onCommit={(v) => (v === "Lost" ? setRemoving(true) : update({ stage: v as Stage }))}
         />
         <div className="ml-auto flex gap-2">
           <button
@@ -538,6 +539,8 @@ export default function ProjectDetail({
         <CallHistory calls={calls} teamMembers={teamMembers} />
       </div>
 
+      <CompanySuggestion projectId={project.id} phone={project.phone} />
+
       {leadHistory && (
         <div className="mt-6">
           <LeadHistory history={leadHistory} teamMembers={teamMembers} />
@@ -567,6 +570,18 @@ export default function ProjectDetail({
           clientName={project.client_name}
           onDone={afterRemoved}
           onCancel={() => setRemoving(false)}
+          // Admins only (canDelete is Admin-only): a plain stage update with
+          // no reason; the database refuses it for everyone else.
+          onForce={
+            canDelete
+              ? async () => {
+                  const { error } = await supabase.from("projects").update({ stage: "Lost" }).eq("id", project.id);
+                  if (error) return error.message;
+                  await afterRemoved();
+                  return null;
+                }
+              : undefined
+          }
         />
       )}
 

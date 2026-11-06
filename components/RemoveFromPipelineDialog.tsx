@@ -9,7 +9,11 @@ import {
   type RemoveReason,
 } from "@/lib/projects";
 
-// "Remove from pipeline" on the Manage Project page. Calls the
+// "Remove from pipeline": the Manage Project button, and any move to Lost
+// (Kanban drag, the stage badge in the Table or on the project page).
+// Cancel leaves the stage as it was. onForce (Admins, project page only):
+// "Set Lost without a reason", a plain stage update the database allows
+// only for Admins (projects_guard_lost, migration 035). Calls the
 // remove_from_pipeline() RPC: the project goes to Lost with the reason, and
 // the company's business record returns to the Leads tab (Not now with a
 // revisit date for Timing / not now and Just networking, else Not
@@ -19,11 +23,13 @@ export default function RemoveFromPipelineDialog({
   clientName,
   onDone,
   onCancel,
+  onForce,
 }: {
   projectId: string;
   clientName: string;
   onDone: () => void;
   onCancel: () => void;
+  onForce?: () => Promise<string | null>;
 }) {
   const supabase = useMemo(() => createClient(), []);
   const [reason, setReason] = useState<RemoveReason | null>(null);
@@ -132,7 +138,25 @@ export default function RemoveFromPipelineDialog({
           </p>
         )}
 
-        <div className="mt-4 flex justify-end gap-2">
+        <div className="mt-4 flex flex-wrap justify-end gap-2">
+          {onForce && (
+            <button
+              type="button"
+              disabled={saving}
+              onClick={async () => {
+                setSaving(true);
+                setError(null);
+                const err = await onForce();
+                if (err) {
+                  setSaving(false);
+                  setError(err);
+                }
+              }}
+              className="mr-auto rounded-md px-1 py-1.5 text-sm font-medium text-neutral-500 underline hover:text-neutral-800 disabled:opacity-50"
+            >
+              Set Lost without a reason
+            </button>
+          )}
           <button
             type="button"
             onClick={onCancel}

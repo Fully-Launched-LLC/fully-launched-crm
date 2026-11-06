@@ -17,6 +17,7 @@ import { DEFAULT_STAGE, STAGES, type Stage } from "@/lib/theme";
 import type { Project, TeamMember } from "@/lib/types";
 import { branchValue, type BranchSlug } from "@/lib/branches";
 import { projectDetailHref } from "@/lib/projects";
+import RemoveFromPipelineDialog from "@/components/RemoveFromPipelineDialog";
 import KanbanColumn from "@/components/kanban/KanbanColumn";
 import KanbanCard, {
   KanbanCardPreview,
@@ -44,6 +45,7 @@ export default function ProjectsKanban({
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [removing, setRemoving] = useState<Project | null>(null);
   const [projects, setProjects] = useState<Project[]>(initialProjects);
   const [error, setError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
@@ -123,6 +125,12 @@ export default function ProjectsKanban({
     const stage = event.over?.id as Stage | undefined;
     const project = projects.find((p) => p.id === id);
     if (!project || !stage || project.stage === stage) return;
+    // Lost goes through Remove from pipeline (reason, note, revisit); the
+    // card stays put until it's saved, and Cancel leaves it.
+    if (stage === "Lost") {
+      setRemoving(project);
+      return;
+    }
 
     // Optimistic: move now and bump updated_at so it lands at the top of the
     // new column; the DB trigger sets the real value, synced back below.
@@ -179,6 +187,21 @@ export default function ProjectsKanban({
 
   return (
     <div>
+      {removing && (
+        <RemoveFromPipelineDialog
+          projectId={removing.id}
+          clientName={removing.client_name}
+          onCancel={() => setRemoving(null)}
+          onDone={() => {
+            const id = removing.id;
+            setRemoving(null);
+            setProjects((prev) =>
+              prev.map((p) => (p.id === id ? { ...p, stage: "Lost", updated_at: new Date().toISOString() } : p))
+            );
+            router.refresh();
+          }}
+        />
+      )}
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-neutral-500">
           {projects.length} project{projects.length === 1 ? "" : "s"}

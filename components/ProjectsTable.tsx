@@ -24,6 +24,7 @@ import { branchSlug } from "@/lib/branches";
 import { projectDetailHref } from "@/lib/projects";
 import { branchChangePatch } from "@/lib/channels";
 import ChannelsField from "@/components/ChannelsField";
+import RemoveFromPipelineDialog from "@/components/RemoveFromPipelineDialog";
 
 type SortDir = "asc" | "desc";
 
@@ -115,6 +116,9 @@ export default function ProjectsTable({
       .sort()
       .join(", ");
   }
+
+  // Moving to Lost opens Remove from pipeline; Cancel leaves the stage.
+  const [removing, setRemoving] = useState<Project | null>(null);
 
   async function updateProject(id: string, patch: Partial<Project>) {
     const previous = projects;
@@ -265,7 +269,9 @@ export default function ProjectsTable({
             value={p.stage}
             options={STAGES}
             colors={STAGE_COLORS}
-            onCommit={(v) => updateProject(p.id, { stage: v as Stage })}
+            onCommit={(v) =>
+              v === "Lost" ? setRemoving(p) : updateProject(p.id, { stage: v as Stage })
+            }
           />
         ),
       },
@@ -522,6 +528,19 @@ export default function ProjectsTable({
 
   return (
     <div>
+      {removing && (
+        <RemoveFromPipelineDialog
+          projectId={removing.id}
+          clientName={removing.client_name}
+          onCancel={() => setRemoving(null)}
+          onDone={() => {
+            const id = removing.id;
+            setRemoving(null);
+            setProjects((prev) => prev.map((p) => (p.id === id ? { ...p, stage: "Lost" } : p)));
+            router.refresh();
+          }}
+        />
+      )}
       <div className="mb-3 flex items-center justify-between">
         <p className="text-sm text-neutral-500">
           {rows.length} of {projects.length} project{projects.length === 1 ? "" : "s"}
