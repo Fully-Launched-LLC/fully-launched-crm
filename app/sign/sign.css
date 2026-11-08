@@ -1,0 +1,100 @@
+/* Public signing page, in the client portal look (FL-social-dash
+   dashboards/template/shell.css): one navy for every surface, white ink,
+   gold/tan only for the one main action, Hanken Grotesk, outlined cards and
+   white offset "binder tab" shadows. Deliberate exception to the lib/theme.ts
+   rule, like lead-finder.css: every selector is scoped under .fl-sign so
+   nothing leaks into the CRM. */
+@import url("https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Great+Vibes&display=swap");
+
+.fl-sign {
+  --navy: #04101f;
+  --white: #ffffff;
+  --gold: #c4ab82;
+  --border: rgba(255, 255, 255, 0.12);
+  --line-2: rgba(255, 255, 255, 0.22);
+  --line-strong: rgba(255, 255, 255, 0.4);
+  --sub: rgba(255, 255, 255, 0.72);
+  --sub2: rgba(255, 255, 255, 0.5);
+  min-height: 100vh;
+  background: var(--navy);
+  color: var(--white);
+  font-family: "Hanken Grotesk", system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+  color-scheme: dark;
+}
+.fl-sign * { box-sizing: border-box; }
+.fl-sign a { color: inherit; }
+
+.fl-sign .wrap { max-width: 860px; margin: 0 auto; padding: 28px 16px 80px; }
+.fl-sign .brand { display: flex; align-items: center; gap: 12px; margin-bottom: 28px; }
+.fl-sign .brand img { width: 150px; height: auto; display: block; }
+.fl-sign .brand span { color: var(--gold); font-size: 14px; letter-spacing: 0.02em; }
+
+.fl-sign h1 { font-weight: 700; font-size: 26px; letter-spacing: -0.02em; margin: 0 0 6px; }
+.fl-sign h2 { font-weight: 700; font-size: 18px; margin: 0 0 4px; }
+.fl-sign .lede { color: var(--sub); margin: 0 0 22px; line-height: 1.5; }
+.fl-sign .muted { color: var(--sub2); font-size: 13px; }
+
+.fl-sign .card {
+  border: 1.5px solid var(--line-strong);
+  border-radius: 14px;
+  padding: 18px;
+  margin: 0 0 18px;
+  box-shadow: 3px 3px 0 var(--line-2);
+}
+.fl-sign .doc-label {
+  display: inline-block; padding: 3px 9px; border-radius: 999px; font-size: 11px; font-weight: 700;
+  letter-spacing: 0.06em; text-transform: uppercase; border: 1px solid var(--line-strong); color: var(--sub);
+  margin-bottom: 10px;
+}
+
+/* PDF pages: white paper on the navy. */
+.fl-sign .pdf-pages { display: flex; flex-direction: column; gap: 12px; }
+.fl-sign .pdf-pages canvas { width: 100%; height: auto; display: block; border-radius: 6px; background: var(--white); }
+.fl-sign .pdf-loading { color: var(--sub2); padding: 24px 0; text-align: center; }
+
+/* Package selection. */
+.fl-sign .group { padding: 14px 0; border-top: 1px solid var(--border); }
+.fl-sign .group:first-of-type { border-top: none; padding-top: 0; }
+.fl-sign .choice {
+  display: flex; align-items: flex-start; gap: 10px; padding: 9px 12px; border-radius: 10px;
+  border: 1px solid var(--border); margin-top: 8px; cursor: pointer;
+}
+.fl-sign .choice.on { border-color: var(--white); }
+.fl-sign .choice input { margin-top: 3px; accent-color: var(--gold); }
+.fl-sign .choice .price { margin-left: auto; white-space: nowrap; font-weight: 600; }
+.fl-sign .choice.fixed { cursor: default; opacity: 0.85; }
+
+.fl-sign .totals { display: grid; grid-template-columns: 1fr auto; gap: 6px 16px; font-size: 15px; }
+.fl-sign .totals b { font-weight: 700; }
+.fl-sign .totals .r { text-align: right; }
+
+/* Form. */
+.fl-sign .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+@media (max-width: 600px) { .fl-sign .grid2 { grid-template-columns: 1fr; } }
+.fl-sign label.f { display: block; font-size: 13px; color: var(--sub); }
+.fl-sign input[type="text"], .fl-sign input[type="email"] {
+  width: 100%; margin-top: 6px; padding: 10px 12px; border-radius: 10px; font: inherit; color: var(--white);
+  background: var(--navy); border: 1.5px solid var(--line-strong);
+}
+.fl-sign input[type="text"]:focus, .fl-sign input[type="email"]:focus { outline: 2px solid var(--white); outline-offset: 2px; }
+.fl-sign .sig-preview {
+  margin-top: 12px; min-height: 64px; padding: 6px 12px; border-bottom: 1.5px solid var(--line-strong);
+  font-family: "Great Vibes", cursive; font-size: 40px; line-height: 1.2; color: var(--white);
+}
+.fl-sign .consent { display: flex; gap: 10px; align-items: flex-start; margin: 16px 0; color: var(--sub); line-height: 1.45; }
+.fl-sign .consent input { margin-top: 4px; accent-color: var(--gold); width: 16px; height: 16px; }
+
+.fl-sign .btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 12px 20px;
+  border-radius: 12px; font: inherit; font-weight: 700; cursor: pointer; text-decoration: none;
+  border: 1.5px solid var(--line-strong); background: var(--navy); color: var(--white);
+  box-shadow: 3px 3px 0 var(--line-2); transition: transform 0.12s, box-shadow 0.12s;
+}
+.fl-sign .btn:hover { transform: translate(-1px, -1px); box-shadow: 4px 4px 0 var(--line-strong); }
+.fl-sign .btn.primary { background: var(--gold); color: var(--navy); border-color: var(--gold); }
+.fl-sign .btn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; box-shadow: none; }
+.fl-sign .error { border: 1px solid var(--gold); color: var(--gold); border-radius: 10px; padding: 10px 12px; margin: 12px 0; }
+.fl-sign .state { text-align: center; padding: 48px 18px; }
+.fl-sign .state p { color: var(--sub); line-height: 1.5; }

@@ -1,0 +1,61 @@
+# Air-Rite PO Generator Proposal (1JtVjFYoEvUXD2G6SHrVLg7qHmIVBZ5B3otKZ57pU5HE, found by name in Templates folder)
+# title: Air-Rite PO Generator Proposal
+## HEADER kix.j407bth7jr8f
+[undefined-1] P NORMAL_TEXT: ""
+## HEADER kix.xlv3djfth3sq
+[undefined-1] P NORMAL_TEXT: ""
+## BODY
+[0-1] SECTION_BREAK
+[1-24] P NORMAL_TEXT: "            x Air-Rite"
+[24-41] P NORMAL_TEXT: "Project Overview"
+[41-42] P NORMAL_TEXT: ""
+[42-157] P NORMAL_TEXT: "Project Goal: Build a custom AI-powered tool that automates purchase order creation directly from vendor invoices."
+[157-158] P NORMAL_TEXT: ""
+[158-1923] TABLE 6x2
+  cell r0 c0:
+    [161-170] P HEADING_4: "Overview"
+  cell r0 c1:
+    [171-229] P NORMAL_TEXT: "Fully Launched builds custom AI software for businesses. "
+    [229-566] P NORMAL_TEXT: "For Air-Rite, we're building a tool that removes manual purchase order entry from your workflow. You drag and drop vendor invoices into the tool, Claude reads and extracts the line items, and the tool creates the purchase order for your review and confirmation. What currently takes manual entry, line by line, becomes a single upload. "
+  cell r1 c0:
+    [568-582] P HEADING_4: "Project Scope"
+  cell r1 c1:
+    [583-617] P NORMAL_TEXT: "Phase 1: Discovery & Access Setup"
+    [617-668] P NORMAL_TEXT: "- Review current invoice-to-PO workflow and volume"
+    [668-1202] P NORMAL_TEXT: "- Confirm system API access\u000b\u000bPhase 2: Core Build\u000b- Drag-and-drop upload interface\u000b- Claude API integration to extract invoice line items (vendor, SKU, quantity, cost)\u000b- API integration to auto-generate a Purchase Order from extracted data, queued for your review\u000b\u000bPhase 3: Testing & Refinement\u000b- Collaborative testing against real invoices from your vendors\u000b- Refine extraction accuracy and edge cases (multi-page invoices, unusual formats)\u000b\u000bPhase 4: Deployment & Handoff\u000b- Tool deployed and hosted\u000b- Walkthrough session on daily use"
+    [1202-1203] P NORMAL_TEXT: ""
+    [1203-1204] P NORMAL_TEXT: ""
+    [1204-1205] P NORMAL_TEXT: ""
+    [1205-1206] P NORMAL_TEXT: ""
+    [1206-1207] P NORMAL_TEXT: ""
+  cell r2 c0:
+    [1209-1227] P NORMAL_TEXT: "Expected Outcomes"
+  cell r2 c1:
+    [1228-1306] P NORMAL_TEXT: "At the completion of this project, the project team can expect the following:"
+    [1306-1386] P NORMAL_TEXT bullet(0): "A working tool that turns invoice upload into a ready-to-confirm Purchase Order"
+    [1386-1434] P NORMAL_TEXT bullet(0): "Significant reduction in manual data entry time"
+  cell r3 c0:
+    [1436-1445] P NORMAL_TEXT: "Timeline"
+  cell r3 c1:
+    [1446-1495] P NORMAL_TEXT: "Estimated: 3-4 weeks from kickoff to deployment."
+    [1495-1496] P NORMAL_TEXT: ""
+    [1496-1506] P NORMAL_TEXT: "Meetings:"
+    [1506-1541] P NORMAL_TEXT: "Weekly check-ins during the build."
+    [1541-1597] P NORMAL_TEXT: "At Phase 3, more regular daily checkins will be needed."
+  cell r4 c0:
+    [1599-1610] P NORMAL_TEXT: "Investment"
+  cell r4 c1:
+    [1611-1635] P NORMAL_TEXT: "Initial Build: $8,000  "
+    [1635-1700] P NORMAL_TEXT: "50% deposit due before Phase 1\u000b50% completion due before handoff"
+    [1700-1735] P NORMAL_TEXT: "Safety Net: +$100/hr over 50 hours"
+    [1735-1917] P NORMAL_TEXT: "\u000bOngoing Retainer: $400/month (hosting, credits, and platform costs)\u000b\u000bFuture feature builds, edits, or scope changes beyond this tool are not included and will be quoted separately."
+  cell r5 c0:
+    [1919-1920] P NORMAL_TEXT: ""
+  cell r5 c1:
+    [1921-1922] P NORMAL_TEXT: ""
+[1923-1924] P NORMAL_TEXT: ""
+## FOOTER kix.k9dp3ilky6qx
+[undefined-1] P NORMAL_TEXT: ""
+## FOOTER kix.f6i3scsxv0rl
+[undefined-1] P NORMAL_TEXT: ""
+## INLINE OBJECTS: 0, POSITIONED: 3

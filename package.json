@@ -3,16 +3,25 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "predev": "node scripts/copy-pdf-worker.mjs",
     "dev": "next dev",
+    "prebuild": "node scripts/copy-pdf-worker.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "next lint"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^1.6.0",
     "@dnd-kit/core": "^6.3.1",
+    "@googleapis/docs": "^14.1.1",
+    "@googleapis/drive": "^27.0.0",
+    "@pdf-lib/fontkit": "^1.1.1",
     "@supabase/ssr": "^0.12.5",
     "@supabase/supabase-js": "^2.112.4",
+    "google-auth-library": "^11.3.3",
     "next": "14.2.35",
+    "pdf-lib": "^1.17.1",
+    "pdfjs-dist": "^4.10.38",
     "react": "^18",
     "react-dom": "^18",
     "recharts": "^3.10.1",
@@ -27,6 +36,7 @@
     "eslint-config-next": "14.2.35",
     "postcss": "^8",
     "tailwindcss": "^3.4.1",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
