@@ -6,6 +6,9 @@
  * Usage (from the repo root; reads .env.local):
  *   npx tsx scripts/build-doc-templates.ts --dump    read-only: writes the
  *       sources' structure to scripts/doc-templates/source-dump/*.txt
+ *   npx tsx scripts/build-doc-templates.ts --dump-masters    read-only: the two
+ *       CRM masters (template IDs from env) with bold runs marked **like this**,
+ *       to scripts/doc-templates/master-dump/*.txt
  *   npx tsx scripts/build-doc-templates.ts --write   copies the sources and
  *       applies scripts/doc-templates/map.ts, prints the new doc IDs + links
  *
@@ -106,10 +109,18 @@ async function findSource(c: Clients, s: { id: string; name: string }): Promise<
 // ---- dump --------------------------------------------------------------------
 type El = docs_v1.Schema$StructuralElement;
 
-function dumpContent(content: El[] | undefined, depth: string, out: string[]) {
+function dumpContent(content: El[] | undefined, depth: string, out: string[], marks = false) {
   for (const el of content ?? []) {
     if (el.paragraph) {
-      const text = (el.paragraph.elements ?? []).map((e) => e.textRun?.content ?? "").join("").replace(/\n$/, "");
+      const text = (el.paragraph.elements ?? [])
+        .map((e) => {
+          const t = e.textRun?.content ?? "";
+          if (!marks || !e.textRun?.textStyle?.bold) return t;
+          const core = t.replace(/\n$/, "");
+          return core ? `**${core}**${t.slice(core.length)}` : t;
+        })
+        .join("")
+        .replace(/\n$/, "");
       const style = el.paragraph.paragraphStyle?.namedStyleType ?? "";
       const bullet = el.paragraph.bullet ? ` bullet(${el.paragraph.bullet.nestingLevel ?? 0})` : "";
       out.push(`${depth}[${el.startIndex}-${el.endIndex}] P ${style}${bullet}: ${JSON.stringify(text)}`);
@@ -118,7 +129,7 @@ function dumpContent(content: El[] | undefined, depth: string, out: string[]) {
       (el.table.tableRows ?? []).forEach((row, r) =>
         (row.tableCells ?? []).forEach((cell, c) => {
           out.push(`${depth}  cell r${r} c${c}:`);
-          dumpContent(cell.content, depth + "    ", out);
+          dumpContent(cell.content, depth + "    ", out, marks);
         })
       );
     } else if (el.sectionBreak) {
@@ -150,6 +161,23 @@ async function dump() {
     const file = path.join(dir, `${key}.txt`);
     writeFileSync(file, out.join("\n") + "\n");
     console.log(`${s.name}: ${src.via} -> ${file} (${out.length} lines)`);
+  }
+}
+
+async function dumpMasters() {
+  const c = clients();
+  const dir = path.resolve("scripts/doc-templates/master-dump");
+  mkdirSync(dir, { recursive: true });
+  const ids = { proposal: process.env.GOOGLE_DOCS_PROPOSAL_TEMPLATE_ID, sow: process.env.GOOGLE_DOCS_SOW_TEMPLATE_ID };
+  for (const [key, id] of Object.entries(ids)) {
+    if (!id) throw new Error(`Template ID for ${key} is not set`);
+    const doc = (await c.docs.documents.get({ documentId: id })).data;
+    const out: string[] = [`# ${doc.title} (${id})`];
+    out.push("## BODY");
+    dumpContent(doc.body?.content, "", out, true);
+    const file = path.join(dir, `${key}.txt`);
+    writeFileSync(file, out.join("\n") + "\n");
+    console.log(`${doc.title}: -> ${file} (${out.length} lines)`);
   }
 }
 
@@ -208,7 +236,7 @@ async function write() {
 }
 
 const mode = process.argv[2];
-(mode === "--dump" ? dump() : mode === "--write" ? write() : Promise.reject(new Error("Pass --dump or --write")))
+(mode === "--dump" ? dump() : mode === "--dump-masters" ? dumpMasters() : mode === "--write" ? write() : Promise.reject(new Error("Pass --dump, --dump-masters or --write")))
   .catch((e) => {
     console.error(e instanceof Error ? e.message : e);
     process.exit(1);

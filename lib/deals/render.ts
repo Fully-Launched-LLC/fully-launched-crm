@@ -253,6 +253,10 @@ export function sowPlan(args: {
       ai_tool: present.has("ai_tool"),
       other: present.has("other"),
       package_selection: hasChoices(items),
+      // "One-time build fees are billed 50% at execution..." (Fees). Kept when
+      // the deal has any one-time item, optional ones included: the client
+      // can pick one at signature and the signed SOW must carry its terms.
+      one_time_terms: items.some((i) => i.kind === "one_time"),
     },
     scalars,
     lists,

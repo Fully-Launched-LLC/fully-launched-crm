@@ -1,0 +1,216 @@
+# CRM Master SOW (1G1tk7M0eb7lfCuTMeR1PVs8MzToO6O3x09hfVi3FPt8)
+## BODY
+[0-1] SECTION_BREAK
+[1-15] P NORMAL_TEXT: "**FullyLaunched**"
+[15-33] P NORMAL_TEXT: "**STATEMENT OF WORK**"
+[33-66] P NORMAL_TEXT: "Fully Launched × {{client_name}}"
+[66-67] P NORMAL_TEXT: ""
+[67-245] TABLE 5x2
+  cell r0 c0:
+    [70-83] P NORMAL_TEXT: "**Prepared for**"
+  cell r0 c1:
+    [84-100] P NORMAL_TEXT: "{{client_name}}"
+  cell r1 c0:
+    [102-114] P NORMAL_TEXT: "**Prepared by**"
+  cell r1 c1:
+    [115-130] P NORMAL_TEXT: "Fully Launched"
+  cell r2 c0:
+    [132-144] P NORMAL_TEXT: "**Date issued**"
+  cell r2 c1:
+    [145-161] P NORMAL_TEXT: "{{date_issued}}"
+  cell r3 c0:
+    [163-177] P NORMAL_TEXT: "**Valid through**"
+  cell r3 c1:
+    [178-196] P NORMAL_TEXT: "{{valid_through}}"
+  cell r4 c0:
+    [198-225] P NORMAL_TEXT: "**Target launch / start date**"
+  cell r4 c1:
+    [226-244] P NORMAL_TEXT: "{{target_launch}}"
+[245-246] P NORMAL_TEXT: ""
+[246-516] P NORMAL_TEXT: "This Statement of Work is entered into between Fully Launched and {{client_name}}. It supersedes the pricing and scope described in any preliminary proposal or discussion previously provided to {{client_name}}. Where this SOW and that document differ, this SOW governs."
+[516-528] P HEADING_1: "**1. Overview**"
+[528-553] P NORMAL_TEXT: "[[BEGIN:overview_multi]]"
+[553-859] P NORMAL_TEXT: "Fully Launched will manage {{client_name}}'s digital launch as a single coordinated engagement across {{workstreams}}. Each workstream is priced independently and may be selected or declined by {{client_name}} at signature. Selections are recorded in Section {{selection_section_number}} of this document."
+[859-882] P NORMAL_TEXT: "[[END:overview_multi]]"
+[882-908] P NORMAL_TEXT: "[[BEGIN:overview_single]]"
+[908-1012] P NORMAL_TEXT: "Fully Launched will deliver {{workstreams}} for {{client_name}} as described in this Statement of Work."
+[1012-1036] P NORMAL_TEXT: "[[END:overview_single]]"
+[1036-1055] P NORMAL_TEXT: "{{brand_sentence}}"
+[1055-1073] P NORMAL_TEXT: "[[BEGIN:website]]"
+[1073-1105] P HEADING_1: "**2. Website Design & Development**"
+[1105-1123] P NORMAL_TEXT: "{{website_intro}}"
+[1123-1141] P NORMAL_TEXT bullet(0): "{{website_tiers}}"
+[1141-1154] P HEADING_2: "Deliverables"
+[1154-1179] P NORMAL_TEXT bullet(0): "{{website_deliverables}}"
+[1179-1209] P NORMAL_TEXT: "[[BEGIN:website_maintenance]]"
+[1209-1240] P HEADING_2: "**Ongoing Maintenance (optional)**"
+[1240-1406] P NORMAL_TEXT: "Monthly maintenance fee: {{maintenance_amount}}. Covers {{maintenance_covers}}. Maintenance is optional, billed monthly in arrears, and may be cancelled at any time."
+[1406-1434] P NORMAL_TEXT: "[[END:website_maintenance]]"
+[1434-1453] P HEADING_2: "**Website Exclusions**"
+[1453-1555] P NORMAL_TEXT bullet(0): "Domain registration, platform subscription fees, and third-party app costs, billed directly to client"
+[1555-1571] P NORMAL_TEXT: "[[END:website]]"
+[1571-1593] P NORMAL_TEXT: "[[BEGIN:marketplace]]"
+[1593-1608] P HEADING_1: "**3. Marketplace**"
+[1608-1630] P NORMAL_TEXT: "{{marketplace_intro}}"
+[1630-1652] P NORMAL_TEXT bullet(0): "{{marketplace_items}}"
+[1652-1665] P HEADING_2: "Deliverables"
+[1665-1694] P NORMAL_TEXT bullet(0): "{{marketplace_deliverables}}"
+[1694-1725] P NORMAL_TEXT: "[[BEGIN:marketplace_retainer]]"
+[1725-1750] P HEADING_2: "**Post-Launch Optimization**"
+[1750-2074] P NORMAL_TEXT: "{{optimization_period}} of included optimization following launch. Thereafter, ongoing support is available on retainer at {{retainer_amount}}/month, covering approximately {{retainer_hours}} hours monthly of {{retainer_covers}}. Work exceeding retainer hours is billed at {{overage_rate}}/hour with prior written approval."
+[2074-2103] P NORMAL_TEXT: "[[END:marketplace_retainer]]"
+[2103-2126] P HEADING_2: "**Marketplace Exclusions**"
+[2126-2198] P NORMAL_TEXT bullet(0): "Additional marketplaces not named above, available by written amendment"
+[2198-2246] P NORMAL_TEXT bullet(0): "Platform seller fees, billed directly to client"
+[2246-2266] P NORMAL_TEXT: "[[END:marketplace]]"
+[2266-2283] P NORMAL_TEXT: "[[BEGIN:social]]"
+[2283-2310] P HEADING_1: "**4. Social Media Management**"
+[2310-2327] P NORMAL_TEXT: "{{social_intro}}"
+[2327-2344] P NORMAL_TEXT bullet(0): "{{social_items}}"
+[2344-2368] P NORMAL_TEXT bullet(0): "{{social_deliverables}}"
+[2368-2448] P NORMAL_TEXT bullet(0): "Content strategy, shot lists, and creative direction provided by Fully Launched"
+[2448-2501] P NORMAL_TEXT bullet(0): "Editing, captions, and copywriting by Fully Launched"
+[2501-2549] P NORMAL_TEXT bullet(0): "Monthly content calendar submitted for approval"
+[2549-2573] P NORMAL_TEXT: "[[BEGIN:social_travel]]"
+[2573-2586] P HEADING_2: "**Travel Terms**"
+[2586-2743] P NORMAL_TEXT: "Travel is not included in the monthly fee and is reimbursed separately as a line item on the monthly invoice. Reimbursable travel consists of the following:"
+[2743-2807] P NORMAL_TEXT bullet(0): "Mileage, reimbursed at the prevailing IRS standard mileage rate"
+[2807-2852] P NORMAL_TEXT bullet(0): "Lodging, where an overnight stay is required"
+[2852-2897] P NORMAL_TEXT bullet(0): "Meals and incidentals at a standard per diem"
+[2897-2919] P NORMAL_TEXT: "[[END:social_travel]]"
+[2919-2947] P NORMAL_TEXT: "[[BEGIN:social_production]]"
+[2947-2968] P HEADING_2: "**Production Day Terms**"
+[2968-3064] P NORMAL_TEXT bullet(0): "Production days are scheduled with a minimum of {{production_notice_days}} days' advance notice"
+[3064-3164] P NORMAL_TEXT bullet(0): "{{client_name}} provides the location, product samples/materials, wardrobe, and any required talent"
+[3164-3280] P NORMAL_TEXT bullet(0): "Fully Launched supplies the shot list in advance. Plan for {{production_setups}} distinct setups per production day"
+[3280-3445] P NORMAL_TEXT bullet(0): "A production day cancelled within {{production_cancel_hours}} hours of the scheduled date is considered delivered for that month and is not rescheduled at no charge"
+[3445-3529] P NORMAL_TEXT bullet(0): "Additional production days beyond those included are available by written amendment"
+[3529-3555] P NORMAL_TEXT: "[[END:social_production]]"
+[3555-3579] P HEADING_2: "**Social Media Exclusions**"
+[3579-3684] P NORMAL_TEXT bullet(0): "Community management (responses to comments/DMs) is not included and remains the client's responsibility"
+[3684-3747] P NORMAL_TEXT bullet(0): "Stories, paid advertising, influencer fees, and licensed music"
+[3747-3762] P NORMAL_TEXT: "[[END:social]]"
+[3762-3780] P NORMAL_TEXT: "[[BEGIN:ai_tool]]"
+[3780-3797] P HEADING_1: "5. AI Tool Build"
+[3797-3815] P NORMAL_TEXT: "{{ai_tool_intro}}"
+[3815-3833] P NORMAL_TEXT bullet(0): "{{ai_tool_items}}"
+[3833-3840] P HEADING_2: "Phases"
+[3840-3859] P NORMAL_TEXT bullet(0): "{{ai_tool_phases}}"
+[3859-3872] P HEADING_2: "Deliverables"
+[3872-3897] P NORMAL_TEXT bullet(0): "{{ai_tool_deliverables}}"
+[3897-3922] P HEADING_2: "AI Tool Build Exclusions"
+[3922-4019] P NORMAL_TEXT bullet(0): "Third-party software subscriptions, API usage fees, and hosting costs, billed directly to client"
+[4019-4102] P NORMAL_TEXT bullet(0): "Changes to the client's other software systems beyond the integrations named above"
+[4102-4161] P NORMAL_TEXT bullet(0): "New features or tools beyond this scope, quoted separately"
+[4161-4177] P NORMAL_TEXT: "[[END:ai_tool]]"
+[4177-4193] P NORMAL_TEXT: "[[BEGIN:other]]"
+[4193-4211] P HEADING_1: "6. Other Services"
+[4211-4227] P NORMAL_TEXT: "{{other_intro}}"
+[4227-4243] P NORMAL_TEXT bullet(0): "{{other_items}}"
+[4243-4266] P NORMAL_TEXT bullet(0): "{{other_deliverables}}"
+[4266-4280] P NORMAL_TEXT: "[[END:other]]"
+[4280-4305] P HEADING_1: "**7. Timeline & Milestones**"
+[4305-4521] P NORMAL_TEXT: "Target launch/start date: {{target_launch}}. This date is contingent on the dependencies listed in Section {{dependencies_section_number}}. Each dependency missed shifts the date by an equal number of calendar days."
+[4521-4863] TABLE 5x3
+  cell r0 c0:
+    [4524-4531] P NORMAL_TEXT: "**Period**"
+  cell r0 c1:
+    [4532-4538] P NORMAL_TEXT: "**Dates**"
+  cell r0 c2:
+    [4539-4549] P NORMAL_TEXT: "**Milestone**"
+  cell r1 c0:
+    [4551-4556] P NORMAL_TEXT: "**Gate**"
+  cell r1 c1:
+    [4557-4570] P NORMAL_TEXT: "At signature"
+  cell r1 c2:
+    [4571-4661] P NORMAL_TEXT: "SOW executed and {{first_payment}} received. Work does not begin until both are complete."
+  cell r2 c0:
+    [4663-4670] P NORMAL_TEXT: "**Week 1**"
+  cell r2 c1:
+    [4671-4687] P NORMAL_TEXT: "{{week1_dates}}"
+  cell r2 c2:
+    [4688-4747] P NORMAL_TEXT: "Kickoff call, intake, asset handoff, admin access granted."
+  cell r3 c0:
+    [4749-4769] P NORMAL_TEXT: "**{{timeline.period}}**"
+  cell r3 c1:
+    [4770-4789] P NORMAL_TEXT: "{{timeline.dates}}"
+  cell r3 c2:
+    [4790-4813] P NORMAL_TEXT: "{{timeline.milestone}}"
+  cell r4 c0:
+    [4815-4822] P NORMAL_TEXT: "**Launch**"
+  cell r4 c1:
+    [4823-4841] P NORMAL_TEXT: "{{target_launch}}"
+  cell r4 c2:
+    [4842-4862] P NORMAL_TEXT: "Launch and handoff."
+[4863-4905] P HEADING_1: "**8. Client Responsibilities & Dependencies**"
+[4905-5060] P NORMAL_TEXT: "The timeline above assumes {{client_name}} meets the following. These are the most common causes of delay and are called out specifically for that reason."
+[5060-5138] TABLE 2x2
+  cell r0 c0:
+    [5063-5074] P NORMAL_TEXT: "**Dependency**"
+  cell r0 c1:
+    [5075-5082] P NORMAL_TEXT: "**Detail**"
+  cell r1 c0:
+    [5084-5112] P NORMAL_TEXT: "**{{dependencies.dependency}}**"
+  cell r1 c1:
+    [5113-5137] P NORMAL_TEXT: "{{dependencies.detail}}"
+[5138-5305] P NORMAL_TEXT: "{{client_name}} will designate a point of contact responsible for providing content and approvals. Approvals and change requests are submitted and confirmed by email."
+[5305-5338] P HEADING_1: "**9. Ownership, Access & Reporting**"
+[5338-5348] P HEADING_2: "**Ownership**"
+[5348-5450] P NORMAL_TEXT bullet(0): "{{client_name}} owns 100% of the {{owned_assets}} produced under this SOW upon completion and payment"
+[5450-5551] P NORMAL_TEXT bullet(0): "{{client_name}} retains administrator access to all platforms and accounts throughout the engagement"
+[5551-5692] P NORMAL_TEXT bullet(0): "Should the engagement end, all logins, assets, and documentation are transferred so another agency can take over without rebuilding anything"
+[5692-5702] P HEADING_2: "**Reporting**"
+[5702-5850] P NORMAL_TEXT: "Fully Launched provides written reports on a {{reporting_cadence}} basis covering {{reporting_metrics}}. Success is measured against these metrics."
+[5850-5858] P HEADING_2: "**Support**"
+[5858-5929] P NORMAL_TEXT bullet(0): "{{support_response}} response to support requests during business days"
+[5929-5978] P NORMAL_TEXT bullet(0): "Resolution times vary by the nature of the issue"
+[5978-6018] P HEADING_1: "**10. Change Requests & Out-of-Scope Work**"
+[6018-6146] P NORMAL_TEXT: "Work outside the scope defined in this SOW is billable. Change requests are submitted and approved by email before work begins."
+[6146-6260] TABLE 2x3
+  cell r0 c0:
+    [6149-6157] P NORMAL_TEXT: "**Service**"
+  cell r0 c1:
+    [6158-6163] P NORMAL_TEXT: "**Rate**"
+  cell r0 c2:
+    [6164-6173] P NORMAL_TEXT: "**Approval**"
+  cell r1 c0:
+    [6175-6203] P NORMAL_TEXT: "**{{change_requests.service}}**"
+  cell r1 c1:
+    [6204-6229] P NORMAL_TEXT: "{{change_requests.rate}}"
+  cell r1 c2:
+    [6230-6259] P NORMAL_TEXT: "{{change_requests.approval}}"
+[6260-6285] P HEADING_1: "**11. Fees & Payment Terms**"
+[6285-6300] P NORMAL_TEXT bullet(0): "{{fees_items}}"
+[6300-6325] P NORMAL_TEXT: "[[BEGIN:one_time_terms]]"
+[6325-6403] P NORMAL_TEXT bullet(0): "One-time build fees are billed 50% at execution of this SOW and 50% at launch"
+[6403-6426] P NORMAL_TEXT: "[[END:one_time_terms]]"
+[6426-6480] P NORMAL_TEXT bullet(0): "Monthly retainers are billed at the end of each month"
+[6480-6502] P NORMAL_TEXT bullet(0): "Payment terms: Net 15"
+[6502-6673] P NORMAL_TEXT bullet(0): "Third-party costs, including platform subscriptions, domain registration, software and API fees, and ad spend, are not included and are billed directly to {{client_name}}"
+[6673-6701] P HEADING_2: "Assumptions Used in Pricing"
+[6701-6717] P NORMAL_TEXT: "{{assumptions}}"
+[6717-6796] P NORMAL_TEXT: "Work does not begin until the executed SOW and {{first_payment}} are received."
+[6796-6819] P HEADING_1: "**12. Term & Termination**"
+[6819-6846] P NORMAL_TEXT bullet(0): "No minimum contract length"
+[6846-6876] P NORMAL_TEXT bullet(0): "There are no termination fees"
+[6876-6952] P NORMAL_TEXT bullet(0): "Fully Launched continues work through the end of the current billing period"
+[6952-7040] P NORMAL_TEXT bullet(0): "All logins, assets, and documentation are transferred to {{client_name}} on termination"
+[7040-7068] P NORMAL_TEXT: "[[BEGIN:package_selection]]"
+[7068-7090] P HEADING_1: "**13. Package Selection**"
+[7090-7174] P NORMAL_TEXT: "{{client_name}} indicates its selections below. Only selected items are contracted."
+[7174-7202] P NORMAL_TEXT bullet(0): "{{package_selection_items}}"
+[7202-7293] P NORMAL_TEXT: "Selections are recorded at electronic signature on the Selections page of the signed copy."
+[7293-7319] P NORMAL_TEXT: "[[END:package_selection]]"
+[7319-7347] P HEADING_1: "**14. Acceptance & Signatures**"
+[7347-7459] P NORMAL_TEXT: "By signing below, both parties agree to the scope, fees, timeline, and terms set out in this Statement of Work."
+[7459-7542] P NORMAL_TEXT: "Signed electronically. See the Signature and Audit Trail pages of the signed copy."
+[7542-7557] P NORMAL_TEXT: "**Fully Launched**"
+[7557-7603] P NORMAL_TEXT: "Signature: __________________________________"
+[7603-7638] P NORMAL_TEXT: "Name: ____________________________"
+[7638-7674] P NORMAL_TEXT: "Title: ____________________________"
+[7674-7693] P NORMAL_TEXT: "Date: ____________"
+[7693-7709] P NORMAL_TEXT: "**{{client_name}}**"
+[7709-7755] P NORMAL_TEXT: "Signature: __________________________________"
+[7755-7790] P NORMAL_TEXT: "Name: ____________________________"
+[7790-7826] P NORMAL_TEXT: "Title: ____________________________"
+[7826-7845] P NORMAL_TEXT: "Date: ____________"

@@ -1,0 +1,44 @@
+# CRM Master Proposal (1uFWvXkUJMGzC0n2QGAOU5ApL6WGd5dzQZ_GLVD_CsOs)
+## BODY
+[0-1] SECTION_BREAK
+[1-31] P NORMAL_TEXT: "**            x {{client_name}}**"
+[31-48] P NORMAL_TEXT: "Project Overview"
+[48-49] P NORMAL_TEXT: ""
+[49-80] P NORMAL_TEXT: "**Project Goal: {{project_goal}}**"
+[80-81] P NORMAL_TEXT: ""
+[81-506] TABLE 5x2
+  cell r0 c0:
+    [84-93] P HEADING_4: "Overview"
+  cell r0 c1:
+    [94-107] P NORMAL_TEXT: "{{overview}}"
+  cell r1 c0:
+    [109-123] P HEADING_4: "Project Scope"
+  cell r1 c1:
+    [124-150] P NORMAL_TEXT: "**Phase 1: {{phase_1_name}}**"
+    [150-162] P NORMAL_TEXT: "{{phase_1}}"
+    [162-163] P NORMAL_TEXT: ""
+    [163-189] P NORMAL_TEXT: "**Phase 2: {{phase_2_name}}**"
+    [189-201] P NORMAL_TEXT: "{{phase_2}}"
+    [201-202] P NORMAL_TEXT: ""
+    [202-228] P NORMAL_TEXT: "**Phase 3: {{phase_3_name}}**"
+    [228-240] P NORMAL_TEXT: "{{phase_3}}"
+    [240-241] P NORMAL_TEXT: ""
+    [241-267] P NORMAL_TEXT: "**Phase 4: {{phase_4_name}}**"
+    [267-279] P NORMAL_TEXT: "{{phase_4}}"
+  cell r2 c0:
+    [281-299] P NORMAL_TEXT: "Expected Outcomes"
+  cell r2 c1:
+    [300-378] P NORMAL_TEXT: "At the completion of this project, the project team can expect the following:"
+    [378-400] P NORMAL_TEXT bullet(0): "{{expected_outcomes}}"
+  cell r3 c0:
+    [402-411] P NORMAL_TEXT: "Timeline"
+  cell r3 c1:
+    [412-445] P NORMAL_TEXT: "**Estimated:** {{timeline_estimate}}"
+    [445-446] P NORMAL_TEXT: ""
+    [446-456] P NORMAL_TEXT: "**Meetings:**"
+    [456-476] P NORMAL_TEXT: "{{meeting_cadence}}"
+  cell r4 c0:
+    [478-489] P NORMAL_TEXT: "Investment"
+  cell r4 c1:
+    [490-505] P NORMAL_TEXT: "{{investment}}"
+[506-507] P NORMAL_TEXT: ""

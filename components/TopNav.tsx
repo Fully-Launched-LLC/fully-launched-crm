@@ -9,6 +9,7 @@ import UndoToast from "@/components/clock/UndoToast";
 import ClockOutDialog from "@/components/clock/ClockOutDialog";
 import { useTimeClock } from "@/components/clock/useTimeClock";
 import { useDueFollowUps } from "@/components/sales/useDueFollowUps";
+import { useAwaitingCountersign } from "@/components/deals/useAwaitingCountersign";
 
 // Sales tab badge: my follow-ups due today or overdue; links to that list.
 const DUE_HREF = "/leads?view=history&due=1";
@@ -42,6 +43,28 @@ export default function TopNav({
     </span>
   );
 
+  // Projects tab badge (Admins): signed deals awaiting countersignature.
+  const awaiting = useAwaitingCountersign(isAdmin, pathname);
+  const signHref = awaiting.projectId ? `/project/${awaiting.projectId}` : PROJECTS_HREF;
+  const signTitle =
+    awaiting.count > 0
+      ? `${awaiting.count} signed deal${awaiting.count === 1 ? "" : "s"} awaiting countersignature`
+      : undefined;
+  const signBadge = awaiting.count > 0 && (
+    <span className="ml-1.5 inline-flex min-w-[1.25rem] items-center justify-center rounded-full bg-header-foreground px-1.5 text-[11px] font-semibold leading-5 text-header">
+      {awaiting.count}
+    </span>
+  );
+  const tabHref = (href: string) =>
+    href === "/leads" && due > 0 ? DUE_HREF : href === PROJECTS_HREF && awaiting.count > 0 ? signHref : href;
+  const tabTitle = (href: string) =>
+    href === "/leads" && due > 0
+      ? `${due} follow-up${due === 1 ? "" : "s"} due`
+      : href === PROJECTS_HREF
+        ? signTitle
+        : undefined;
+  const tabBadge = (href: string) => (href === "/leads" ? dueBadge : href === PROJECTS_HREF ? signBadge : null);
+
   // Branch list pages — these get the sub-tab row.
   const onProjects = pathname.startsWith("/projects/");
   // "Projects" stays highlighted on a single project's page too.
@@ -57,6 +80,7 @@ export default function TopNav({
     ...(isAdmin ? [{ label: "Transactions", href: "/transactions" }] : []),
     { label: "Contacts", href: "/contacts" },
     { label: "Team", href: "/team" },
+    ...(isAdmin ? [{ label: "Settings", href: "/settings" }] : []),
   ];
 
   const subTabs = BRANCH_SLUGS.map((slug) => ({
@@ -117,8 +141,8 @@ export default function TopNav({
         {tabs.map((tab) => (
           <Link
             key={tab.href}
-            href={tab.href === "/leads" && due > 0 ? DUE_HREF : tab.href}
-            title={tab.href === "/leads" && due > 0 ? `${due} follow-up${due === 1 ? "" : "s"} due` : undefined}
+            href={tabHref(tab.href)}
+            title={tabTitle(tab.href)}
             className={`border-b-2 px-4 py-3 text-sm font-medium text-header-foreground transition-opacity ${
               isActive(tab.href)
                 ? "border-header-foreground opacity-100"
@@ -126,7 +150,7 @@ export default function TopNav({
             }`}
           >
             {tab.label}
-            {tab.href === "/leads" && dueBadge}
+            {tabBadge(tab.href)}
           </Link>
         ))}
         {memberId && (
@@ -211,11 +235,12 @@ export default function TopNav({
                   {/* Label goes to All; the chevron expands the sub-tabs. */}
                   <div className="flex items-center">
                     <Link
-                      href={tab.href}
+                      href={tabHref(tab.href)}
                       onClick={() => setMenuOpen(false)}
                       className={`flex-1 px-4 ${mobileLinkClass(isActive(tab.href))}`}
                     >
                       {tab.label}
+                      {signBadge}
                     </Link>
                     <button
                       type="button"
@@ -261,12 +286,12 @@ export default function TopNav({
               ) : (
                 <Link
                   key={tab.href}
-                  href={tab.href === "/leads" && due > 0 ? DUE_HREF : tab.href}
+                  href={tabHref(tab.href)}
                   onClick={() => setMenuOpen(false)}
                   className={`px-4 ${mobileLinkClass(isActive(tab.href))}`}
                 >
                   {tab.label}
-                  {tab.href === "/leads" && dueBadge}
+                  {tabBadge(tab.href)}
                 </Link>
               )
             )}
