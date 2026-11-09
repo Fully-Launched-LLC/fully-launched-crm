@@ -11,7 +11,7 @@ import type { ProjectLeadHistory } from "@/components/LeadHistory";
 import Link from "next/link";
 import DealDesk, { type DealDeskData } from "@/components/deals/DealDesk";
 import ProjectDocuments from "@/components/deals/ProjectDocuments";
-import { googleConfigured } from "@/lib/deals/google";
+import { googleConfigured, googleEnvProblems } from "@/lib/deals/google";
 import { docsKeyConfigured } from "@/lib/deals/ai";
 import type { ProjectLink } from "@/lib/deals/types";
 import type { Stage } from "@/lib/theme";
@@ -103,6 +103,7 @@ export default async function ProjectDetailPage({
           members={(teamMembers ?? []) as TeamMember[]}
           me={currentMember}
           googleOk={{ proposal: googleConfigured("proposal"), sow: googleConfigured("sow") }}
+          googleIssue={googleEnvProblems("all").join("; ") || null}
           docsKeyOk={docsKeyConfigured()}
         />
       )}
@@ -138,7 +139,7 @@ async function loadDealDesk(
   ]);
   if (!settings) return null;
   if (!deal) return { deal: null, items: [], docs: [], signatures: [], events: [], settings };
-  const [{ data: items }, { data: docs }, { data: signatures }, { data: events }] = await Promise.all([
+  const [{ data: items }, { data: docs }, { data: signatures }, { data: events }, { data: internalLink }] = await Promise.all([
     supabase.from("deal_line_items").select("*").eq("deal_id", deal.id),
     supabase.from("deal_documents").select("*").eq("deal_id", deal.id).order("version", { ascending: false }),
     supabase
@@ -149,6 +150,14 @@ async function loadDealDesk(
       .eq("deal_id", deal.id)
       .order("created_at", { ascending: false }),
     supabase.from("deal_events").select("*").eq("deal_id", deal.id).order("created_at", { ascending: false }).limit(50),
+    supabase
+      .from("project_links")
+      .select("url")
+      .eq("deal_id", deal.id)
+      .eq("kind", "internal_doc")
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
   ]);
   return {
     deal,
@@ -162,6 +171,7 @@ async function loadDealDesk(
     signatures: signatures ?? [],
     events: events ?? [],
     settings,
+    internalDocUrl: internalLink?.url ?? null,
   };
 }
 

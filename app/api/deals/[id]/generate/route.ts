@@ -2,9 +2,10 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { docsKeyConfigured } from "@/lib/deals/ai";
 import { generateDocument } from "@/lib/deals/generate";
-import { googleConfigured } from "@/lib/deals/google";
+import { googleEnvProblems } from "@/lib/deals/google";
 import { jsonError, loadDeal, requireMember } from "@/lib/deals/server";
 import { logDealEvent } from "@/lib/deals/events";
+import { refreshInternalDoc } from "@/lib/deals/internalDoc";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -21,7 +22,8 @@ export async function POST(req: Request, { params }: { params: { id: string } })
   };
   const kind = body.kind;
   if (kind !== "proposal" && kind !== "sow") return jsonError("kind must be proposal or sow");
-  if (!googleConfigured(kind)) return jsonError("Google Docs not configured", 503);
+  const envProblems = googleEnvProblems(kind);
+  if (envProblems.length) return jsonError(`Google Docs setup: ${envProblems.join("; ")}`, 503);
   if (body.restore_version == null && !docsKeyConfigured()) return jsonError("Docs key not configured", 503);
 
   const db = createClient();
@@ -45,6 +47,9 @@ export async function POST(req: Request, { params }: { params: { id: string } })
       section: body.section ?? null,
       restored_from: body.restore_version ?? null,
     });
+    // The internal deal doc follows every generate (never fails the request).
+    const fresh = await loadDeal(db, bundle.deal.id);
+    if (fresh) await refreshInternalDoc(db, fresh, auth.member.id, `generate ${kind}`);
     return NextResponse.json({ document: doc });
   } catch (e) {
     console.error("[deal-docs] generate failed", e);

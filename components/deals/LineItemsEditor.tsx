@@ -12,6 +12,13 @@ import {
   type LineItemKind,
 } from "@/lib/deals/types";
 
+const OPTIONAL_HELP =
+  "the client can tick it on or off when signing. Items that aren't optional (and have no tier name) are always included.";
+const DEFAULT_HELP =
+  "starts ticked on the sign page and counts in the default totals, the Proposal's Investment and the internal deal doc.";
+const PRODUCTION_HELP =
+  "adds the production-day and travel sections to the SOW and makes the production fields required. Unchecked: both sections are left out.";
+
 const cell = "w-full rounded border border-neutral-300 px-2 py-1 text-sm disabled:bg-neutral-50";
 const small = "text-xs text-neutral-500";
 
@@ -144,8 +151,13 @@ export default function LineItemsEditor({
     />
   );
 
-  const flag = (i: DealLineItem, key: "optional" | "selected_by_default" | "is_productized_tool", lbl: string) => (
-    <label className="flex items-center gap-1.5 text-xs text-neutral-700">
+  const flag = (
+    i: DealLineItem,
+    key: "optional" | "selected_by_default" | "includes_production_days",
+    lbl: string,
+    title?: string
+  ) => (
+    <label className="flex items-center gap-1.5 text-xs text-neutral-700" title={title}>
       <input
         type="checkbox"
         checked={i[key]}
@@ -220,6 +232,22 @@ export default function LineItemsEditor({
         </div>
       )}
 
+      <ul className="mt-2 space-y-0.5 text-xs text-neutral-500">
+        <li>
+          <b className="font-medium text-neutral-700">Optional:</b> {OPTIONAL_HELP}
+        </li>
+        <li>
+          <b className="font-medium text-neutral-700">Selected by default:</b> {DEFAULT_HELP}
+        </li>
+        <li>
+          <b className="font-medium text-neutral-700">Tiers</b> (items with a tier name): the client picks one tier per
+          section, or Declined. The tier selected by default is preselected (else the first).
+        </li>
+        <li>
+          <b className="font-medium text-neutral-700">Includes production days</b> (social only): {PRODUCTION_HELP}
+        </li>
+      </ul>
+
       {!grouped.length && <p className="mt-3 text-sm text-neutral-500">No line items yet.</p>}
 
       {grouped.map((g) => (
@@ -273,9 +301,10 @@ export default function LineItemsEditor({
                   </div>
                 </div>
                 <div className="mt-2 flex flex-wrap items-center gap-4">
-                  {flag(i, "optional", "Optional")}
-                  {flag(i, "selected_by_default", "Selected by default")}
-                  {flag(i, "is_productized_tool", "Productized tool")}
+                  {flag(i, "optional", "Optional", OPTIONAL_HELP)}
+                  {flag(i, "selected_by_default", "Selected by default", DEFAULT_HELP)}
+                  {i.branch === "social" &&
+                    flag(i, "includes_production_days", "Includes production days", PRODUCTION_HELP)}
                   {!locked && (
                     <div className="ml-auto flex gap-2 text-sm">
                       <button type="button" className="text-neutral-600 disabled:opacity-30" disabled={idx === 0} onClick={() => guard(() => move(g.list, idx, -1))}>

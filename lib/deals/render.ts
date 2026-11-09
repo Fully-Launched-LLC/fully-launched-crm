@@ -186,9 +186,6 @@ export function sowPlan(args: {
     brand_sentence: content.brand_sentence,
     first_payment: firstPayment(items),
     owned_assets: ownedAssets(items),
-    reporting_cadence: deal.reporting_cadence || "monthly",
-    reporting_metrics: deal.reporting_metrics?.trim() || edit("reporting metrics"),
-    support_response: deal.support_response || "Same-day",
     assumptions: content.assumptions,
     maintenance_amount: websiteMonthly.length
       ? `${money(websiteMonthly.reduce((s, i) => s + Number(i.amount), 0))} per month`
@@ -248,8 +245,9 @@ export function sowPlan(args: {
       website_maintenance: websiteMonthly.length > 0,
       marketplace: present.has("marketplace"),
       social: present.has("social"),
-      social_travel: present.has("social"),
-      social_production: present.has("social"),
+      // Production days are opt-in per social item (migration 038).
+      social_travel: hasProductionDays(items),
+      social_production: hasProductionDays(items),
       ai_tool: present.has("ai_tool"),
       other: present.has("other"),
       package_selection: hasChoices(items),
@@ -321,9 +319,30 @@ function deliverableLines(list: DealLineItem[], del: { item_id: string; bullets:
 export function dealBlockers(deal: Deal, items: DealLineItem[]): string[] {
   const out: string[] = [];
   if (!items.length) out.push("Add at least one line item.");
-  if (items.some((i) => i.branch === "social")) {
+  if (hasProductionDays(items)) {
     if (deal.production_notice_days == null || !deal.production_setups?.trim() || deal.production_cancel_hours == null)
-      out.push("Social is included: fill in the production-day fields (notice days, setups, cancellation hours).");
+      out.push("Production days are included: fill in notice days, setups per day and the cancellation window.");
+  }
+  return out;
+}
+
+// A social line item with "Includes production days" checked.
+export const hasProductionDays = (items: DealLineItem[]) =>
+  items.some((i) => i.branch === "social" && i.includes_production_days);
+
+// Approval blockers the browser can check without Google: deal fields and a
+// current Proposal and SOW. Placeholders left in the Docs come from the live
+// text (GET /api/deals/[id]/approve, approvalBlockers).
+export function clientApprovalBlockers(
+  deal: Deal,
+  items: DealLineItem[],
+  docs: { kind: string; version: number; google_doc_id: string | null }[]
+): string[] {
+  const out = dealBlockers(deal, items);
+  for (const kind of ["proposal", "sow"] as const) {
+    const label = kind === "proposal" ? "Proposal" : "SOW";
+    const cur = docs.filter((d) => d.kind === kind).sort((a, b) => b.version - a.version)[0];
+    if (!cur?.google_doc_id) out.push(`Generate the ${label} first.`);
   }
   return out;
 }

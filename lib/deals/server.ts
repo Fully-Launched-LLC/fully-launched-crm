@@ -79,7 +79,14 @@ export async function loadDeal(db: Db, dealId: string): Promise<DealBundle | nul
   };
 }
 
-export const companyName = (b: DealBundle) => b.lead?.company?.trim() || b.project.client_name;
+// The client's name in documents and the Drive folder (Clients/{name}): the
+// company record (lead) if the deal has one, else the project name. One value,
+// trimmed, never combined. safeName() makes it folder-safe.
+export function companyName(b: Pick<DealBundle, "lead" | "project">): string {
+  const lead = b.lead?.company?.trim();
+  if (lead) return lead;
+  return b.project.client_name?.trim() || "Untitled client";
+}
 
 export function latestDoc(docs: DealDocument[], kind: DealDocument["kind"]): DealDocument | null {
   return docs.filter((d) => d.kind === kind).sort((a, b) => b.version - a.version)[0] ?? null;

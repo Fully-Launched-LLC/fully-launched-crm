@@ -13,12 +13,11 @@ type Field = {
 };
 
 const FIELDS: Field[] = [
-  { key: "project_hourly_rate", label: "Project hourly rate", hint: "Estimated project hours on the internal deal doc. Not set: shown as missing there.", unit: "$/hr", nullable: true },
-  { key: "management_hourly_rate", label: "Management hourly rate", hint: "Estimated management hours on the internal deal doc.", unit: "$/hr" },
-  { key: "commission_pct", label: "Sales commission", hint: "Of cash collected each month, to the deal owner.", unit: "%" },
-  { key: "earn_up_pct", label: "Earn-up", hint: "Earn-up pool, of cash collected each month.", unit: "%" },
+  { key: "project_hourly_rate", label: "Project hourly rate", hint: "Labor on the internal deal doc: est. project hours x this rate. Not set: margin shows as incomplete.", unit: "$/hr", nullable: true },
+  { key: "management_hourly_rate", label: "Management hourly rate", hint: "Approved management time (time clock, Phase 2 payouts). Not part of deal labor.", unit: "$/hr" },
+  { key: "commission_pct", label: "Sales commission", hint: "Of deal value, to the deal owner, accrued as cash is collected.", unit: "%" },
+  { key: "earn_up_pct", label: "Earn-up", hint: "Of deal value, to the earn-up pool, accrued as cash is collected.", unit: "%" },
   { key: "earn_up_ends", label: "Earn-up ends", hint: "Last month the earn-up pool applies.", unit: "date" },
-  { key: "tool_builder_pct", label: "Tool builder share", hint: "Of cash from productized tool items, to the tool builder.", unit: "%" },
   { key: "default_overage_rate", label: "Default overage rate", hint: "Suggested overage rate on line items.", unit: "$/hr" },
 ];
 

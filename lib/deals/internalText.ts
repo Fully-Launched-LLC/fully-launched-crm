@@ -33,25 +33,22 @@ export function internalDocBlocks(d: InternalDoc, client: string, members: { id:
       heading: "Expected cash by month (12 months)",
       lines: d.months.map(
         (m) =>
-          `${monthLabel(m.month)}: cash ${money(m.cash)}, commission ${money(m.commission)}, earn-up ${money(m.earnUp)}, tool builder ${money(m.toolBuilder)}`
+          `${monthLabel(m.month)}: cash ${money(m.cash)}, commission ${money(m.commission)}, earn-up ${money(m.earnUp)}`
       ),
     },
     {
       heading: "Payouts",
       lines: [
-        `Commission (${d.settings.commission_pct}%) to ${who(d.ownerId)}: ${money(d.totals.commission)}`,
-        `Earn-up pool (${d.settings.earn_up_pct}%, through ${d.settings.earn_up_ends}): ${money(d.totals.earnUp)}`,
-        `Tool builder (${d.settings.tool_builder_pct}%) to ${who(d.toolBuilderId)}: ${money(d.totals.toolBuilder)}`,
-        d.basis,
+        `Commission to ${who(d.ownerId)} (${d.settings.commission_pct}% of deal value, accrued as cash is collected): ${money(d.totals.commission)}`,
+        `Earn-up pool (${d.settings.earn_up_pct}% of deal value, accrued as cash is collected, through ${d.settings.earn_up_ends}): ${money(d.totals.earnUp)}`,
       ],
     },
     {
       heading: "Labor and margin",
       lines: [
-        `Management: ${d.labor.managementHours ?? 0} h x ${money(d.labor.managementRate)} = ${money(d.labor.management)}`,
         d.labor.projectRate == null
-          ? "Project hourly rate not set (Settings > Deal Desk)"
-          : `Project: ${d.labor.projectHours ?? 0} h x ${money(d.labor.projectRate)} = ${money(d.labor.project ?? 0)}`,
+          ? "Labor: project hourly rate not set (Settings > Deal Desk)"
+          : `Labor: ${d.labor.projectHours ?? 0} est. project hours x ${money(d.labor.projectRate)} = ${money(d.labor.project ?? 0)}`,
         `12-month cash: ${money(d.totals.cash)}`,
         d.totals.margin == null ? "Margin: incomplete (project hourly rate not set)" : `Margin: ${money(d.totals.margin)}`,
       ],

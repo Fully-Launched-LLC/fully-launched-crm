@@ -12,23 +12,78 @@ import { Readable } from "node:stream";
 
 const SCOPES = ["https://www.googleapis.com/auth/drive", "https://www.googleapis.com/auth/documents"];
 
+// Env vars the Deal Desk needs. A value that is empty, or looks like a
+// variable name instead of an ID (e.g. GOOGLE_DRIVE_CLIENTS_FOLDER_ID set to
+// its own name), fails with a message naming the variable, instead of
+// Google's "File not found: .".
+const BASE_VARS = ["GOOGLE_SERVICE_ACCOUNT_JSON_B64", "GOOGLE_DRIVE_TEMPLATES_FOLDER_ID", "GOOGLE_DRIVE_CLIENTS_FOLDER_ID"];
+const TEMPLATE_VAR = { proposal: "GOOGLE_DOCS_PROPOSAL_TEMPLATE_ID", sow: "GOOGLE_DOCS_SOW_TEMPLATE_ID" } as const;
+
+function envProblem(name: string): string | null {
+  const v = (process.env[name] ?? "").trim();
+  if (!v) return `${name} is not set`;
+  if (v === name || /^[A-Z][A-Z0-9]*(_[A-Z0-9]+)+$/.test(v) || /^\$|^\{\{|^<.*>$/.test(v))
+    return `${name} looks like a variable name ("${v.slice(0, 40)}"), not a value. Set it to the real ID in Vercel and redeploy.`;
+  if (name === "GOOGLE_SERVICE_ACCOUNT_JSON_B64") {
+    try {
+      const c = JSON.parse(Buffer.from(v, "base64").toString("utf8"));
+      if (!c.client_email || !c.private_key) return `${name} decodes, but has no client_email / private_key`;
+    } catch {
+      return `${name} is not base64-encoded service account JSON`;
+    }
+  } else if (!/^[A-Za-z0-9_-]{10,}$/.test(v)) {
+    return `${name} doesn't look like a Google Drive ID ("${v.slice(0, 40)}")`;
+  }
+  return null;
+}
+
+// Every problem with the Google env (both templates unless kind is given).
+export function googleEnvProblems(kind?: "proposal" | "sow" | "all"): string[] {
+  const names = [...BASE_VARS];
+  if (kind === "proposal" || kind === "sow") names.push(TEMPLATE_VAR[kind]);
+  else if (kind === "all") names.push(TEMPLATE_VAR.proposal, TEMPLATE_VAR.sow);
+  return names.map(envProblem).filter((x): x is string => !!x);
+}
+
 export function googleConfigured(kind?: "proposal" | "sow"): boolean {
-  const base =
-    !!process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64 &&
-    !!process.env.GOOGLE_DRIVE_TEMPLATES_FOLDER_ID &&
-    !!process.env.GOOGLE_DRIVE_CLIENTS_FOLDER_ID;
-  if (!base) return false;
-  if (kind === "proposal") return !!process.env.GOOGLE_DOCS_PROPOSAL_TEMPLATE_ID;
-  if (kind === "sow") return !!process.env.GOOGLE_DOCS_SOW_TEMPLATE_ID;
-  return true;
+  return googleEnvProblems(kind).length === 0;
+}
+
+// Throws one clear error naming every bad variable.
+export function assertGoogleEnv(kind?: "proposal" | "sow" | "all") {
+  const p = googleEnvProblems(kind);
+  if (p.length) throw new Error(`Google Docs setup: ${p.join("; ")}`);
+}
+
+// Settings > Deal Desk health check: env, then each folder / template by ID.
+export async function driveHealth(): Promise<{ label: string; ok: boolean; detail: string }[]> {
+  const problems = googleEnvProblems("all");
+  if (problems.length) return problems.map((p) => ({ label: p.split(" ")[0], ok: false, detail: p }));
+  const checks = [
+    { label: "Templates folder", name: "GOOGLE_DRIVE_TEMPLATES_FOLDER_ID" },
+    { label: "Clients folder", name: "GOOGLE_DRIVE_CLIENTS_FOLDER_ID" },
+    { label: "CRM Master Proposal", name: TEMPLATE_VAR.proposal },
+    { label: "CRM Master SOW", name: TEMPLATE_VAR.sow },
+  ];
+  const out: { label: string; ok: boolean; detail: string }[] = [];
+  for (const c of checks) {
+    try {
+      const m = await fileMeta(process.env[c.name]!.trim());
+      out.push({ label: c.label, ok: true, detail: `${m.name} (${m.mimeType?.replace("application/vnd.google-apps.", "")})` });
+    } catch (e) {
+      out.push({ label: c.label, ok: false, detail: `${c.name}: ${e instanceof Error ? e.message : String(e)}` });
+    }
+  }
+  console.log("[deal-docs] drive check", JSON.stringify(out));
+  return out;
 }
 
 let cached: { drive: drive_v3.Drive; docs: docs_v1.Docs } | null = null;
 
 export function gapi() {
   if (cached) return cached;
-  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64;
-  if (!b64) throw new Error("Google Docs not configured");
+  assertGoogleEnv();
+  const b64 = process.env.GOOGLE_SERVICE_ACCOUNT_JSON_B64!.trim();
   const creds = JSON.parse(Buffer.from(b64, "base64").toString("utf8")) as {
     client_email: string;
     private_key: string;
@@ -79,7 +134,8 @@ export async function ensureFolder(parentId: string, name: string): Promise<stri
 
 // Clients/{Company} and Clients/{Company}/Internal.
 export async function ensureClientFolders(company: string) {
-  const clients = process.env.GOOGLE_DRIVE_CLIENTS_FOLDER_ID!;
+  assertGoogleEnv();
+  const clients = process.env.GOOGLE_DRIVE_CLIENTS_FOLDER_ID!.trim();
   const folderId = await ensureFolder(clients, safeName(company));
   const internalId = await ensureFolder(folderId, "Internal");
   return { folderId, folderUrl: folderUrl(folderId), internalId };
@@ -424,19 +480,46 @@ export async function replaceDates(docId: string, values: Record<string, string>
   );
 }
 
-// A plain Doc (internal deal doc export): headings and lines.
-export async function createPlainDoc(
+// A plain Doc (internal deal doc): headings and lines. With existingId the
+// Doc's body is replaced in place (same link); a trashed or missing Doc is
+// created again.
+export async function writePlainDoc(
   name: string,
   parentId: string,
-  blocks: { heading?: string; lines: string[] }[]
+  blocks: { heading?: string; lines: string[] }[],
+  existingId?: string | null
 ): Promise<string> {
   const { drive } = gapi();
-  const created = await drive.files.create({
-    ...ALL,
-    requestBody: { name, parents: [parentId], mimeType: "application/vnd.google-apps.document" },
-    fields: "id",
-  });
-  const id = created.data.id!;
+  let id = existingId ?? null;
+  if (id) {
+    try {
+      const meta = await drive.files.get({ ...ALL, fileId: id, fields: "id, trashed" });
+      if (meta.data.trashed) id = null;
+    } catch {
+      id = null;
+    }
+  }
+  if (!id) {
+    const created = await drive.files.create({
+      ...ALL,
+      requestBody: { name, parents: [parentId], mimeType: "application/vnd.google-apps.document" },
+      fields: "id",
+    });
+    id = created.data.id!;
+  } else {
+    const doc = await getDoc(id);
+    const end = doc.body?.content?.at(-1)?.endIndex ?? 1;
+    if (end > 2) await batch(id, [{ deleteContentRange: { range: { startIndex: 1, endIndex: end - 1 } } }]);
+    await batch(id, [
+      {
+        updateParagraphStyle: {
+          range: { startIndex: 1, endIndex: 2 },
+          paragraphStyle: { namedStyleType: "NORMAL_TEXT" },
+          fields: "namedStyleType",
+        },
+      },
+    ]);
+  }
   // Build the text, then style headings by range.
   let text = "";
   const headings: { start: number; end: number }[] = [];

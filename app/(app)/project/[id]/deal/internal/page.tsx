@@ -91,14 +91,13 @@ export default async function InternalDealDocPage({ params }: { params: { id: st
           {monthLabel(d.launchMonth)}), monthly items from the launch month.
         </p>
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full min-w-[640px]">
+          <table className="w-full min-w-[480px]">
             <thead>
               <tr>
                 <th className={th}>Month</th>
                 <th className={`${th} text-right`}>Cash</th>
                 <th className={`${th} text-right`}>Commission</th>
                 <th className={`${th} text-right`}>Earn-up pool</th>
-                <th className={`${th} text-right`}>Tool builder</th>
               </tr>
             </thead>
             <tbody>
@@ -108,7 +107,6 @@ export default async function InternalDealDocPage({ params }: { params: { id: st
                   <td className={tdr}>{money(m.cash)}</td>
                   <td className={tdr}>{money(m.commission)}</td>
                   <td className={tdr}>{money(m.earnUp)}</td>
-                  <td className={tdr}>{money(m.toolBuilder)}</td>
                 </tr>
               ))}
               <tr className="border-t border-neutral-300 font-semibold">
@@ -116,7 +114,6 @@ export default async function InternalDealDocPage({ params }: { params: { id: st
                 <td className={tdr}>{money(d.totals.cash)}</td>
                 <td className={tdr}>{money(d.totals.commission)}</td>
                 <td className={tdr}>{money(d.totals.earnUp)}</td>
-                <td className={tdr}>{money(d.totals.toolBuilder)}</td>
               </tr>
             </tbody>
           </table>
@@ -128,15 +125,12 @@ export default async function InternalDealDocPage({ params }: { params: { id: st
           <h2 className="text-sm font-semibold text-foreground">Payouts</h2>
           <ul className="mt-2 space-y-1 text-sm text-foreground">
             <li>
-              Commission ({d.settings.commission_pct}% of cash collected) to {who(d.ownerId)}: {money(d.totals.commission)}
+              Commission to {who(d.ownerId)} ({d.settings.commission_pct}% of deal value, accrued as cash is collected):{" "}
+              {money(d.totals.commission)}
             </li>
             <li>
-              Earn-up pool ({d.settings.earn_up_pct}% of cash collected, through {d.settings.earn_up_ends}):{" "}
-              {money(d.totals.earnUp)}
-            </li>
-            <li>
-              Tool builder ({d.settings.tool_builder_pct}% of productized tool revenue) to {who(d.toolBuilderId)}:{" "}
-              {money(d.totals.toolBuilder)}
+              Earn-up pool ({d.settings.earn_up_pct}% of deal value, accrued as cash is collected, through{" "}
+              {d.settings.earn_up_ends}): {money(d.totals.earnUp)}
             </li>
           </ul>
           <p className="mt-2 text-xs text-neutral-500">Basis: {d.basis}</p>
@@ -145,17 +139,16 @@ export default async function InternalDealDocPage({ params }: { params: { id: st
           <h2 className="text-sm font-semibold text-foreground">Labor and margin</h2>
           <ul className="mt-2 space-y-1 text-sm text-foreground">
             <li>
-              Management: {d.labor.managementHours ?? 0} h x {money(d.labor.managementRate)} = {money(d.labor.management)}
-            </li>
-            <li>
               {d.labor.projectRate == null ? (
-                <span className="text-amber-700">Project hourly rate not set (Settings &gt; Deal Desk)</span>
+                <span className="text-amber-700">Labor: project hourly rate not set (Settings &gt; Deal Desk)</span>
               ) : (
                 <>
-                  Project: {d.labor.projectHours ?? 0} h x {money(d.labor.projectRate)} = {money(d.labor.project ?? 0)}
+                  Labor: {d.labor.projectHours ?? 0} est. project hours x {money(d.labor.projectRate)} ={" "}
+                  {money(d.labor.project ?? 0)}
                 </>
               )}
             </li>
+            <li>12-month cash: {money(d.totals.cash)}</li>
             <li className="pt-2 font-semibold">
               Margin:{" "}
               {d.totals.margin == null ? (
@@ -166,7 +159,7 @@ export default async function InternalDealDocPage({ params }: { params: { id: st
             </li>
           </ul>
           <p className="mt-2 text-xs text-neutral-500">
-            Margin = 12-month cash minus commission, earn-up, tool builder share and estimated labor.
+            Margin = 12-month cash minus commission, earn-up and labor.
           </p>
         </div>
       </section>

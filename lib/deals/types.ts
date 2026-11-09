@@ -43,15 +43,10 @@ export type Deal = {
   valid_through: string | null;
   target_start: string | null;
   target_launch: string | null;
-  reporting_cadence: string;
-  reporting_metrics: string | null;
-  support_response: string;
   production_notice_days: number | null;
   production_setups: string | null;
   production_cancel_hours: number | null;
-  est_management_hours: number | null;
   est_project_hours: number | null;
-  tool_builder_id: string | null;
   drive_folder_id: string | null;
   drive_folder_url: string | null;
   approved_by: string | null;
@@ -77,7 +72,9 @@ export type DealLineItem = {
   overage_rate: number | null;
   selected_by_default: boolean;
   optional: boolean;
-  is_productized_tool: boolean;
+  // Social only: the SOW keeps the production-day and travel sections, and
+  // the deal's production fields are required (migration 038).
+  includes_production_days: boolean;
   sort_order: number;
 };
 
@@ -171,7 +168,6 @@ export type DealSettings = {
   commission_pct: number;
   earn_up_pct: number;
   earn_up_ends: string;
-  tool_builder_pct: number;
   default_overage_rate: number;
   updated_at: string;
 };

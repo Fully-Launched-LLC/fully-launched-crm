@@ -28,7 +28,7 @@ export default function ExportInternalButton({ dealId }: { dealId: string }) {
         }}
         className="rounded-md border border-neutral-300 px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
       >
-        {busy ? "Exporting..." : "Export to Google Doc"}
+        {busy ? "Updating..." : "Update Google Doc"}
       </button>
     </div>
   );

@@ -58,7 +58,6 @@ export function aiInputFor(b: DealBundle, kind: "proposal" | "sow", meetings: Ai
       target_start: b.deal.target_start,
       target_launch: b.deal.target_launch,
     },
-    reporting: { cadence: b.deal.reporting_cadence, metrics: b.deal.reporting_metrics },
   };
 }
 
@@ -102,7 +101,7 @@ export async function generateDocument(args: {
 }): Promise<DealDocument> {
   const { db, bundle: b, kind, section, restoreFrom } = args;
   const templateId =
-    kind === "proposal" ? process.env.GOOGLE_DOCS_PROPOSAL_TEMPLATE_ID! : process.env.GOOGLE_DOCS_SOW_TEMPLATE_ID!;
+    (kind === "proposal" ? process.env.GOOGLE_DOCS_PROPOSAL_TEMPLATE_ID! : process.env.GOOGLE_DOCS_SOW_TEMPLATE_ID!).trim();
 
   // 1. Content: restore an old version's AI text, regenerate one section, or
   //    generate everything.

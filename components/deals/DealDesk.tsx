@@ -6,7 +6,8 @@ import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import ConfirmDialog from "@/components/ConfirmDialog";
 import LineItemsEditor from "@/components/deals/LineItemsEditor";
-import { money, totals } from "@/lib/deals/money";
+import { defaultSelections, money, totals } from "@/lib/deals/money";
+import { clientApprovalBlockers, hasProductionDays } from "@/lib/deals/render";
 import { PROPOSAL_SECTION_LABELS, SOW_SECTION_LABELS } from "@/lib/deals/sections";
 import type { TeamMember } from "@/lib/types";
 import {
@@ -26,6 +27,8 @@ export type DealDeskData = {
   signatures: DealSignature[];
   events: DealEvent[];
   settings: DealSettings;
+  // Latest internal deal doc in Google Docs (project_links kind internal_doc).
+  internalDocUrl?: string | null;
 };
 
 const LIVE = ["approved", "sent", "viewed"];
@@ -52,6 +55,7 @@ export default function DealDesk({
   members,
   me,
   googleOk,
+  googleIssue,
   docsKeyOk,
 }: {
   projectId: string;
@@ -59,6 +63,8 @@ export default function DealDesk({
   members: TeamMember[];
   me: TeamMember;
   googleOk: { proposal: boolean; sow: boolean };
+  // Every Google env problem, named (empty when fine).
+  googleIssue?: string | null;
   docsKeyOk: boolean;
 }) {
   const router = useRouter();
@@ -80,6 +86,26 @@ export default function DealDesk({
   const isAdmin = me.role === "Admin";
   const locked = !deal || ["signed", "countersigned", "void"].includes(deal.status);
   const live = !!deal && LIVE.includes(deal.status);
+
+  // Live approval blockers for a draft (the Docs' current text): the Approve
+  // button stays disabled until they clear. Re-checked on load and focus.
+  const [liveBlockers, setLiveBlockers] = useState<string[] | null>(null);
+  useEffect(() => {
+    if (!data.deal || data.deal.status !== "draft") return;
+    const id = data.deal.id;
+    let alive = true;
+    const load = () =>
+      fetch(`/api/deals/${id}/approve`)
+        .then((r) => r.json())
+        .then((b) => alive && setLiveBlockers(Array.isArray(b.blockers) ? b.blockers : []))
+        .catch(() => alive && setLiveBlockers([]));
+    void load();
+    window.addEventListener("focus", load);
+    return () => {
+      alive = false;
+      window.removeEventListener("focus", load);
+    };
+  }, [data.deal, data.docs]);
 
   // Edit detection when the Deal Desk loads (approved / sent / viewed).
   useEffect(() => {
@@ -168,12 +194,13 @@ export default function DealDesk({
     );
   }
 
-  const hasSocial = data.items.some((i) => i.branch === "social");
-  const hasProductized = data.items.some((i) => i.is_productized_tool);
-  const t = totals(
-    data.items,
-    { items: data.items.filter((i) => !i.optional || i.selected_by_default).map((i) => i.id) }
+  const hasProduction = hasProductionDays(data.items);
+  // Same default package as the documents (one tier per branch).
+  const t = totals(data.items, defaultSelections(data.items));
+  const approveBlockers = Array.from(
+    new Set([...clientApprovalBlockers(deal, data.items, data.docs), ...(liveBlockers ?? [])])
   );
+  const checkingDocs = deal.status === "draft" && liveBlockers === null;
   const docsOf = (k: DocKind) => data.docs.filter((d) => d.kind === k).sort((a, b) => b.version - a.version);
   const signed = data.signatures.find((s) => s.signed_at);
   const activeLink = data.signatures.find((s) => !s.signed_at && !s.revoked_at && new Date(s.expires_at) > new Date());
@@ -183,7 +210,7 @@ export default function DealDesk({
     key: keyof Deal,
     lbl: string,
     type: "text" | "date" | "number" = "text",
-    opts: { internal?: boolean; placeholder?: string } = {}
+    opts: { internal?: boolean; placeholder?: string; help?: string } = {}
   ) => (
     <label className="block">
       <span className={label}>{lbl}</span>
@@ -204,6 +231,7 @@ export default function DealDesk({
           else guard(() => saveDeal({ [key]: value } as Partial<Deal>), revert);
         }}
       />
+      {opts.help && <span className="mt-1 block text-xs text-neutral-500">{opts.help}</span>}
     </label>
   );
 
@@ -229,6 +257,11 @@ export default function DealDesk({
             <Link href={`/project/${projectId}/deal/internal`} className={btn}>
               View Internal Deal Doc
             </Link>
+            {data.internalDocUrl && (
+              <a href={data.internalDocUrl} target="_blank" rel="noopener noreferrer" className={btn}>
+                Open Internal Deal Doc
+              </a>
+            )}
             {isAdmin && (
               <Link href="/settings/deal-desk" className={btn}>
                 Settings
@@ -241,21 +274,20 @@ export default function DealDesk({
 
         <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {field("date_issued", "Date issued", "date", { internal: true })}
-          {field("valid_through", "Valid through", "date")}
-          {field("target_start", "Target start", "date")}
-          {field("target_launch", "Target launch", "date")}
-          {field("reporting_cadence", "Reporting cadence")}
-          <div className="sm:col-span-2">{field("reporting_metrics", "Reporting metrics", "text", { placeholder: "e.g. traffic, leads, orders" })}</div>
-          {field("support_response", "Support response")}
-          {hasSocial && (
+          {field("valid_through", "Valid through", "date", { help: "Last day the client can sign." })}
+          {field("target_start", "Target start", "date", { help: "Fills Week 1 in the SOW timeline." })}
+          {field("target_launch", "Target launch", "date", { help: "Fills the SOW header and the Launch row." })}
+          {hasProduction && (
             <>
               {field("production_notice_days", "Production notice (days)", "number")}
               {field("production_setups", "Setups per production day")}
               {field("production_cancel_hours", "Cancellation window (hours)", "number")}
             </>
           )}
-          {field("est_management_hours", "Est. management hours", "number", { internal: true })}
-          {field("est_project_hours", "Est. project hours", "number", { internal: true })}
+          {field("est_project_hours", "Est. project hours", "number", {
+            internal: true,
+            help: "Internal only. Labor = hours x project hourly rate.",
+          })}
           <label className="block">
             <span className={label}>Deal owner</span>
             <select
@@ -272,24 +304,6 @@ export default function DealDesk({
               ))}
             </select>
           </label>
-          {hasProductized && (
-            <label className="block">
-              <span className={label}>Tool builder</span>
-              <select
-                className={input}
-                value={deal.tool_builder_id ?? ""}
-                disabled={locked}
-                onChange={(e) => saveDeal({ tool_builder_id: e.target.value || null })}
-              >
-                <option value="">None</option>
-                {members.map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
         </div>
         <p className="mt-2 text-xs text-neutral-500">
           Date issued is reset to today, and Valid through to at least today + 14, every time the deal is approved.
@@ -330,7 +344,11 @@ export default function DealDesk({
         const current = versions[0];
         const sectionLabels = kind === "proposal" ? PROPOSAL_SECTION_LABELS : SOW_SECTION_LABELS;
         const ready = googleOk[kind] && docsKeyOk;
-        const why = !googleOk[kind] ? "Google Docs not configured" : !docsKeyOk ? "Docs key not configured" : null;
+        const why = !googleOk[kind]
+          ? googleIssue || "Google Docs not configured"
+          : !docsKeyOk
+            ? "Docs key not configured"
+            : null;
         return (
           <div key={kind} className="rounded-lg border border-neutral-200 p-5">
             <div className="flex flex-wrap items-center gap-2">
@@ -453,9 +471,9 @@ export default function DealDesk({
 
       <div className="rounded-lg border border-neutral-200 p-5">
         <h3 className="text-sm font-semibold text-foreground">Approve and send</h3>
-        {blockers.length > 0 && (
+        {deal.status === "draft" && (blockers.length > 0 || approveBlockers.length > 0) && (
           <ul className="mt-3 list-disc rounded-md border border-amber-300 bg-amber-50 py-2 pl-8 pr-3 text-sm text-amber-800">
-            {blockers.map((b) => (
+            {Array.from(new Set([...approveBlockers, ...blockers])).map((b) => (
               <li key={b}>{b}</li>
             ))}
           </ul>
@@ -466,7 +484,8 @@ export default function DealDesk({
               <button
                 type="button"
                 className={btnPrimary}
-                disabled={!!busy}
+                disabled={!!busy || checkingDocs || approveBlockers.length > 0}
+                title={checkingDocs ? "Checking the Docs..." : approveBlockers.length ? "Clear the items above first" : undefined}
                 onClick={() => call("approve", `/api/deals/${deal.id}/approve`)}
               >
                 {busy === "approve" ? "Approving (exporting PDFs)..." : "Approve"}

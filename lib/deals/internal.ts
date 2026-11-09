@@ -9,10 +9,8 @@ export type CashMonth = {
   oneTime: number;
   monthly: number;
   cash: number;
-  productized: number; // cash from is_productized_tool items
   commission: number;
   earnUp: number;
-  toolBuilder: number;
 };
 
 export type InternalDoc = {
@@ -20,19 +18,16 @@ export type InternalDoc = {
   selection: "signed" | "default";
   breakdown: { branch: string; one_time: number; monthly: number; hourly: { label: string; rate: number }[] }[];
   months: CashMonth[];
-  totals: { cash: number; commission: number; earnUp: number; toolBuilder: number; labor: number | null; margin: number | null };
+  totals: { cash: number; commission: number; earnUp: number; labor: number | null; margin: number | null };
+  // Labor = est. project hours x project hourly rate (null until the rate is set).
   labor: {
-    managementHours: number | null;
-    managementRate: number;
     projectHours: number | null;
     projectRate: number | null;
-    management: number;
     project: number | null;
   };
   marginIncomplete: boolean;
   settings: DealSettings;
   ownerId: string | null;
-  toolBuilderId: string | null;
   startMonth: string;
   launchMonth: string;
 };
@@ -91,7 +86,6 @@ export function computeInternal(
     const m = addMonths(startMonth, n);
     let oneTime = 0;
     let monthly = 0;
-    let productized = 0;
     for (const i of picked) {
       let cash = 0;
       if (i.kind === "one_time") {
@@ -102,7 +96,6 @@ export function computeInternal(
         cash = Number(i.amount);
         monthly += cash;
       }
-      if (i.is_productized_tool) productized += cash;
     }
     const cash = round2(oneTime + monthly);
     months.push({
@@ -110,44 +103,32 @@ export function computeInternal(
       oneTime: round2(oneTime),
       monthly: round2(monthly),
       cash,
-      productized: round2(productized),
+      // Both are a share of deal value, accrued as its cash is collected.
       commission: round2((cash * settings.commission_pct) / 100),
       earnUp: m <= earnEnds ? round2((cash * settings.earn_up_pct) / 100) : 0,
-      toolBuilder: deal.tool_builder_id ? round2((productized * settings.tool_builder_pct) / 100) : 0,
     });
   }
   // A launch more than 12 months after the start would drop the second half;
   // say so through the month list (it simply isn't in the window).
 
   const sum = (k: keyof CashMonth) => round2(months.reduce((s, m) => s + (m[k] as number), 0));
-  const management = round2((deal.est_management_hours ?? 0) * settings.management_hourly_rate);
   const projectRate = settings.project_hourly_rate;
-  const project = projectRate == null ? null : round2((deal.est_project_hours ?? 0) * projectRate);
-  const labor = project == null ? null : round2(management + project);
+  const labor = projectRate == null ? null : round2((deal.est_project_hours ?? 0) * projectRate);
   const cash = sum("cash");
   const commission = sum("commission");
   const earnUp = sum("earnUp");
-  const toolBuilder = sum("toolBuilder");
-  const margin = labor == null ? null : round2(cash - commission - earnUp - toolBuilder - labor);
+  const margin = labor == null ? null : round2(cash - commission - earnUp - labor);
 
   return {
-    basis: `Earn-up pool: ${settings.earn_up_pct}% of cash collected each month, through ${settings.earn_up_ends}. Commission: ${settings.commission_pct}% of cash collected each month, to the deal owner. Tool builder: ${settings.tool_builder_pct}% of cash from productized tool items.`,
+    basis: `Commission: ${settings.commission_pct}% of deal value to the deal owner, accrued as cash is collected. Earn-up pool: ${settings.earn_up_pct}% of deal value, accrued as cash is collected, through ${settings.earn_up_ends}.`,
     selection: signed ? "signed" : "default",
     breakdown,
     months,
-    totals: { cash, commission, earnUp, toolBuilder, labor, margin },
-    labor: {
-      managementHours: deal.est_management_hours,
-      managementRate: settings.management_hourly_rate,
-      projectHours: deal.est_project_hours,
-      projectRate,
-      management,
-      project,
-    },
+    totals: { cash, commission, earnUp, labor, margin },
+    labor: { projectHours: deal.est_project_hours, projectRate, project: labor },
     marginIncomplete: projectRate == null,
     settings,
     ownerId: deal.owner_id,
-    toolBuilderId: deal.tool_builder_id,
     startMonth,
     launchMonth,
   };

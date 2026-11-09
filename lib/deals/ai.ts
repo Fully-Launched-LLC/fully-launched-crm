@@ -49,7 +49,6 @@ export type AiInput = {
     target_start: string | null;
     target_launch: string | null;
   };
-  reporting: { cadence: string; metrics: string | null };
 };
 
 const MONEY_IN_TEXT = /\$\s?\d[\d,]*(\.\d+)?\s?(k|m)?\b|\b\d[\d,]*(\.\d+)?\s?(dollars|usd)\b/gi;
@@ -236,7 +235,6 @@ function userPayload(input: AiInput, fixKeys?: string[]): string {
     meetings: input.meetings,
     line_items: input.line_items,
     dates: input.dates,
-    reporting: input.reporting,
   };
   return [
     instructions(input),

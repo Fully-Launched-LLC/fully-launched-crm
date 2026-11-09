@@ -5,6 +5,7 @@ import { computeInternal } from "@/lib/deals/internal";
 import { DATE_RANGES, dealBlockers, fmtDate } from "@/lib/deals/render";
 import { latestDoc, loadDeal, sha256, uploadToStorage, type DealBundle } from "@/lib/deals/server";
 import { logDealEvent } from "@/lib/deals/events";
+import { refreshInternalDoc } from "@/lib/deals/internalDoc";
 import type { DealDocument } from "@/lib/deals/types";
 
 type Db = ReturnType<typeof createClient>;
@@ -103,6 +104,7 @@ export async function approveDeal(db: Db, b: DealBundle, memberId: string) {
       date_issued: fresh.deal.date_issued,
       valid_through: fresh.deal.valid_through,
     });
+    await refreshInternalDoc(db, fresh, memberId, "approve");
     return { deal: fresh.deal, documents: frozen };
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Approval failed";
