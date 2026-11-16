@@ -400,7 +400,7 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 - **No in-app resend/void.** After sending, the Invoicing field shows "… invoice sent · View in Stripe"; resend or void in the Stripe dashboard. `stripe_deposit_invoice_id` / `stripe_build_invoice_id` block a second send.
 - **Webhook** (`app/api/webhooks/stripe/route.ts`, excluded from the auth middleware): verifies the Stripe signature before anything else. `invoice.paid` → `payment_status` Deposit Paid / Paid, only for invoices this app created (metadata) whose id matches the stored one, and never moves status backwards. `invoice.payment_failed` → logged only, no action. Writes via the service-role client (`lib/supabase/admin.ts`, server-only, bypasses RLS — webhook use only).
 - Duplicate never copies `stripe_*` ids.
-- **`payment_status` is Admin-only** (migration 042, trigger `projects_guard_payment_status`; not applied yet, see punch list). App side (Nov 16): the Payment Status field on the project page is read-only for non-Admins; Duplicate doesn't copy it; the invoice route (Admin or Manager) writes it with the service-role client after its role check; the Stripe webhook already writes it as service role; Finance > Record payment writes it as the user and is Admin-only (UI, and transactions RLS).
+- **`payment_status` is Admin-only** (migration 042, trigger `projects_guard_payment_status`, applied Nov 16 from the SQL editor; refuses 42501 for any signed-in non-Admin; service_role and postgres pass). App side (Nov 16): the Payment Status field on the project page is read-only for non-Admins; Duplicate doesn't copy it; the invoice route (Admin or Manager) writes it with the service-role client after its role check; the Stripe webhook already writes it as service role; Finance > Record payment writes it as the user and is Admin-only (UI, and transactions RLS).
 
 ### Piece 2 — Subscriptions (not built)
 
@@ -430,7 +430,7 @@ The one list of open work. Feature sections point here.
 
 1. ~~"+ Add Team Member" screen (three-role picker)~~ done, shipped in 247e927
 2. ~~Load real client data~~ done: projects, leads and contacts have real data
-3. **Lock `payment_status` to Admins** (security): app side done Nov 16 (see Stripe Piece 1). Pending: apply migration 042 in the SQL editor and run the three verify blocks.
+3. ~~Lock `payment_status` to Admins~~ done Nov 16: migration 042 applied from the SQL editor (not in migration history) and verified on live in rolled-back transactions (Talon changing status refused 42501, Talon's other edit allowed, Luke's change allowed); app side in 231f378 (see Stripe Piece 1).
 4. ~~Remove Elias~~ done Nov 16: archived, not deleted (migrations 043 stored pill colors and 044 archived_at, both applied from the SQL editor, so not in migration history). Hesedea project owner and the Tequila Limón lead moved to Matteo / Luke; Whitney Banks' Ecommerce project to Matteo; her Complete, paid website project keeps Elias as owner (closed record). Luke leads AI + Websites.
 5. ~~Branch colors everywhere~~ done Nov 16: AI crimson, Media orange, Ecommerce green, Websites blue, white text (see Branding).
 6. Time clock (Phase 1): Luke's localhost click-through.
