@@ -43,12 +43,12 @@
 
 - Brand palette lives in one theme config file (`lib/theme.ts`), single swap point — never hardcode colors in components
 - Brand accent is navy `#1B2B4B` (`--color-accent` in `app/globals.css`, replaced `#2563eb`). Any navy use references that variable, not the hex.
-- Branch badges are **solid fills**, fixed regardless of brand palette. Values live once in `BRANCH_FILL` (`lib/theme.ts`); `tailwind.config.ts` imports it as `branch-*` colors, and the dashboard chart uses it directly:
-  - Media — gold `#B8962E`, **navy text** (`text-accent`; white on this gold is 2.82:1 and fails AA)
-  - Websites — brand navy (`var(--color-accent)`)
-  - Ecommerce — dark green `#1B4B3A`
-  - AI — maroon `#7A1F2A`
-  - White text on Websites/Ecommerce/AI.
+- Branch badges are **solid fills**, fixed regardless of brand palette. Values live once in `BRANCH_FILL` (`lib/theme.ts`); `tailwind.config.ts` imports it as `branch-*` colors, and the dashboard chart and Kanban card borders use them. Since Nov 16, 2026 (replaced gold / navy / dark green / maroon), **white text on all four**, every pair AA:
+  - Media: orange `#C2410C` (5.18:1)
+  - Websites: blue `#1D4ED8` (6.70:1); no longer the brand navy
+  - Ecommerce: green `#15803D` (5.02:1)
+  - AI: crimson `#9F1239` (8.02:1), darker than the overdue / Lost reds (`#B91C1C` text, `#EF4444` chart) so the two read differently
+  - Person pills never use red, orange, green or blue (see below).
 - Stage badges are **pastel** (`STAGE_COLORS`: `-50` tint, `-700` text, `-200` border, all ≥ 4.5:1): Leads gray, Interested fuchsia, Signed indigo, In Progress amber, Complete green, Subscriber teal, Lost red. The stage *chart* keeps stronger `-500`-ish fills (`STAGE_CHART_COLORS`).
 - `tailwind.config.ts` `content` must include `./lib/**` — all badge/pill class strings live in `lib/theme.ts`, and before this was added none of them were generated (badges rendered uncolored).
 - **Person pill colors are stored** in `team_members.color` (migration 043), a palette name mapped to classes by `MEMBER_COLORS` in `lib/theme.ts`; `memberColors()` (`lib/team.ts`) just looks it up, no stored color = gray. The palette leaves out red, orange, green and blue (those mean branches): violet, purple, fuchsia, pink, teal, cyan, slate, stone, amber, yellow. New members get the least-used palette color on insert (trigger `team_members_assign_color`, ties in the order amber, fuchsia, stone, yellow, violet, purple, teal, pink, cyan, slate). Adding or archiving someone never changes anyone else's color. Nov 16 mapping: Luke violet, Talon purple, Matteo teal, Tait pink, Declan cyan, Elias slate (archived). (Replaced the email-pinned blue for Luke and the six-color rotation.)
@@ -432,7 +432,7 @@ The one list of open work. Feature sections point here.
 2. ~~Load real client data~~ done: projects, leads and contacts have real data
 3. **Lock `payment_status` to Admins** (security): any signed-in user can edit it today (projects update isn't role-gated). Enforce in the database, not only the UI.
 4. ~~Remove Elias~~ done Nov 16: archived, not deleted (migrations 043 stored pill colors and 044 archived_at, both applied from the SQL editor, so not in migration history). Hesedea project owner and the Tequila Limón lead moved to Matteo / Luke; Whitney Banks' Ecommerce project to Matteo; her Complete, paid website project keeps Elias as owner (closed record). Luke leads AI + Websites.
-5. **Branch colors everywhere:** AI red, Media orange, Ecommerce green, Websites blue. Single swap point `BRANCH_FILL` in `lib/theme.ts` (feeds Tailwind `branch-*`, badges, dashboard chart); update the Branding section here too. Check text contrast on each fill (Media gold currently uses navy text for AA) and that AI red is distinct from the red overdue/Lost styling. Person pills already avoid red/orange/green/blue (043).
+5. ~~Branch colors everywhere~~ done Nov 16: AI crimson, Media orange, Ecommerce green, Websites blue, white text (see Branding).
 6. Time clock (Phase 1): Luke's localhost click-through.
 7. Cal.com: set `CALCOM_WEBHOOK_SECRET` on Vercel, set up each person's Cal.com webhook + booking link, then a real test booking to confirm metadata/payload fields.
 8. Stripe Piece 1: set env vars + webhook endpoint (test mode) and test Deposit/Build invoices end to end. (Piece 2 subscriptions is on hold, see Deferred.)

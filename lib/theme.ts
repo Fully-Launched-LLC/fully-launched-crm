@@ -17,20 +17,21 @@ export const BRANCHES: Branch[] = ["Media", "Websites", "Ecommerce", "AI"];
 // Branch palette: solid fills, visually distinct from the pastel stage
 // badges. The single source for these values — tailwind.config.ts registers
 // them as `branch-*` colors (used below), and the dashboard chart reads them
-// directly. Websites is the brand navy, so it points at the shared
-// --color-accent (app/globals.css) rather than repeating the hex.
+// directly. Nov 16, 2026: AI red, Media orange, Ecommerce green, Websites
+// blue (replaced gold / navy / dark green / maroon). AI is crimson, darker
+// than the overdue / Lost reds (#B91C1C text, #EF4444 chart).
 export const BRANCH_FILL: Record<Branch, string> = {
-  Media: "#B8962E", // gold
-  Websites: "var(--color-accent)", // brand navy #1B2B4B
-  Ecommerce: "#1B4B3A", // dark green
-  AI: "#7A1F2A", // maroon
+  Media: "#C2410C", // orange (Tailwind orange-700)
+  Websites: "#1D4ED8", // blue (blue-700)
+  Ecommerce: "#15803D", // green (green-700)
+  AI: "#9F1239", // crimson (rose-800)
 };
 
-// White text on each fill, except Media: white on gold is 2.82:1 (fails
-// WCAG AA), brand-navy text is 4.98:1. Border matches the fill so filled and
-// pastel badges are the same size.
+// White text on every fill, all WCAG AA for the badges' 12px text: Media
+// 5.18:1, Websites 6.70:1, Ecommerce 5.02:1, AI 8.02:1. Border matches the
+// fill so filled and pastel badges are the same size.
 export const BRANCH_COLORS: Record<Branch, string> = {
-  Media: "bg-branch-media text-accent border border-branch-media",
+  Media: "bg-branch-media text-white border border-branch-media",
   Websites: "bg-branch-websites text-white border border-branch-websites",
   Ecommerce: "bg-branch-ecommerce text-white border border-branch-ecommerce",
   AI: "bg-branch-ai text-white border border-branch-ai",
@@ -38,8 +39,7 @@ export const BRANCH_COLORS: Record<Branch, string> = {
 
 // Kanban card borders (1px all round + a 4px left stripe, set by the card) in
 // the branch color. Border only, no fill: the solid branch colors are too dark
-// for card text, and Websites' navy is a CSS variable, which Tailwind v3
-// can't tint with an opacity modifier.
+// for card text.
 export const BRANCH_CARD_BORDERS: Record<Branch, string> = {
   Media: "border-branch-media",
   Websites: "border-branch-websites",
