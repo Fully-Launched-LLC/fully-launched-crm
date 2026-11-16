@@ -6,6 +6,7 @@ import type { Project, TeamMember, Transaction } from "@/lib/types";
 import TextCell from "@/components/table/TextCell";
 import DateCell from "@/components/table/DateCell";
 import ConfirmDialog from "@/components/ConfirmDialog";
+import { pickableMembers } from "@/lib/team";
 
 const currencyFormat = new Intl.NumberFormat("en-US", {
   style: "currency",
@@ -163,7 +164,7 @@ export default function TransactionsTable({
                     className="w-full min-w-[8rem] rounded border border-transparent px-1.5 py-1 text-sm hover:border-neutral-300"
                   >
                     <option value="">—</option>
-                    {teamMembers.map((m) => (
+                    {pickableMembers(teamMembers, [t.payee]).map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name}
                       </option>

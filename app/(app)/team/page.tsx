@@ -4,6 +4,7 @@ import type { TeamMember } from "@/lib/types";
 import TeamManager from "@/components/team/TeamManager";
 import TeamDirectory from "@/components/team/TeamDirectory";
 import TeamTabs from "@/components/team/TeamTabs";
+import { activeMembers } from "@/lib/team";
 
 export default async function TeamPage() {
   const teamMember = await getCurrentTeamMember();
@@ -14,10 +15,13 @@ export default async function TeamPage() {
   const canSeeFinance = isAdmin || teamMember?.role === "Manager";
 
   const supabase = createClient();
-  const { data: members } = await supabase
+  const { data } = await supabase
     .from("team_members")
     .select("*")
     .order("name");
+  // Archived members (off the team) aren't listed; their history still
+  // shows their name elsewhere.
+  const members = activeMembers((data ?? []) as TeamMember[]);
 
   return (
     <div className="p-8">
@@ -33,11 +37,11 @@ export default async function TeamPage() {
       <div className="mt-6">
         {isAdmin ? (
           <TeamManager
-            initialMembers={(members ?? []) as TeamMember[]}
+            initialMembers={members}
             currentUserId={teamMember.id}
           />
         ) : (
-          <TeamDirectory members={(members ?? []) as TeamMember[]} />
+          <TeamDirectory members={members} />
         )}
       </div>
     </div>

@@ -3,7 +3,7 @@
 import { useMemo, useRef, useState } from "react";
 import Popover from "@/components/table/Popover";
 import type { TeamMember } from "@/lib/types";
-import { memberColors } from "@/lib/team";
+import { memberColors, pickableMembers } from "@/lib/team";
 import { UNKNOWN_MEMBER_COLOR } from "@/lib/theme";
 
 export default function MultiSelectCell({
@@ -20,6 +20,8 @@ export default function MultiSelectCell({
 
   const colors = useMemo(() => memberColors(teamMembers), [teamMembers]);
   const selected = teamMembers.filter((m) => selectedIds.includes(m.id));
+  // Archived members show while selected (history) but can't be newly picked.
+  const options = pickableMembers(teamMembers, selectedIds);
 
   function toggle(id: string) {
     onCommit(
@@ -58,7 +60,7 @@ export default function MultiSelectCell({
         onClose={() => setOpen(false)}
         className="w-48 p-1"
       >
-        {teamMembers.map((m) => (
+        {options.map((m) => (
           <label
             key={m.id}
             className="flex cursor-pointer items-center gap-2 rounded px-2 py-1 text-sm hover:bg-neutral-50"
@@ -71,7 +73,7 @@ export default function MultiSelectCell({
             {m.name}
           </label>
         ))}
-        {teamMembers.length === 0 && (
+        {options.length === 0 && (
           <p className="px-2 py-1 text-sm text-neutral-400">
             No team members yet
           </p>

@@ -170,25 +170,37 @@ export const PAYMENT_STATUSES: PaymentStatus[] = [
   "Paid",
 ];
 
-// Per-person pill colors for Owner/Salesperson (assigned in memberColors(),
-// lib/team.ts). Pinned members are matched by email — stable across name
-// changes. Everyone else gets the next color in the rotation, in roster
-// order, so a newly added member gets a color with no code change.
-export const PINNED_MEMBER_COLORS: Record<string, string> = {
-  "luke@fullylaunched.com": "bg-blue-100 text-blue-800 border border-blue-300",
+// Per-person pill colors for Owner/Salesperson. Each member's color is stored
+// in team_members.color as one of these names (migration 043; new members get
+// one on insert). Red, orange, green and blue are left out: those hues mean
+// branches. Every pair is the Tailwind -100 / -800 / -300 pattern, >= 6.3:1.
+export type MemberColor =
+  | "violet"
+  | "purple"
+  | "fuchsia"
+  | "pink"
+  | "teal"
+  | "cyan"
+  | "slate"
+  | "stone"
+  | "amber"
+  | "yellow";
+
+export const MEMBER_COLORS: Record<MemberColor, string> = {
+  violet: "bg-violet-100 text-violet-800 border border-violet-300",
+  purple: "bg-purple-100 text-purple-800 border border-purple-300",
+  fuchsia: "bg-fuchsia-100 text-fuchsia-800 border border-fuchsia-300",
+  pink: "bg-pink-100 text-pink-800 border border-pink-300",
+  teal: "bg-teal-100 text-teal-800 border border-teal-300",
+  cyan: "bg-cyan-100 text-cyan-800 border border-cyan-300",
+  slate: "bg-slate-100 text-slate-800 border border-slate-300",
+  stone: "bg-stone-100 text-stone-800 border border-stone-300",
+  amber: "bg-amber-100 text-amber-800 border border-amber-300",
+  yellow: "bg-yellow-100 text-yellow-800 border border-yellow-300",
 };
 
-export const MEMBER_COLOR_ROTATION: string[] = [
-  "bg-purple-100 text-purple-800 border border-purple-300",
-  "bg-orange-100 text-orange-800 border border-orange-300",
-  "bg-emerald-100 text-emerald-800 border border-emerald-300",
-  "bg-pink-100 text-pink-800 border border-pink-300",
-  "bg-cyan-100 text-cyan-800 border border-cyan-300",
-  "bg-lime-100 text-lime-800 border border-lime-300",
-];
-
 // Fallback for an id with no roster row (e.g. a deleted member still listed
-// on a project).
+// on a project) or a member with no stored color.
 export const UNKNOWN_MEMBER_COLOR =
   "bg-neutral-100 text-neutral-700 border border-neutral-300";
 

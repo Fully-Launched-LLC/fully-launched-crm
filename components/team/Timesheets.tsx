@@ -34,6 +34,7 @@ import type {
 } from "@/lib/types";
 import EditTimeEntryDialog from "@/components/team/EditTimeEntryDialog";
 import AccomplishedDialog from "@/components/clock/AccomplishedDialog";
+import { isArchived } from "@/lib/team";
 
 type Status = keyof typeof TIME_STATUS_COLORS;
 
@@ -526,7 +527,10 @@ export default function Timesheets({
             </tr>
           </thead>
           <tbody>
-            {members.map((m) => {
+            {members
+              // Archived members appear only for ranges where they logged time.
+              .filter((m) => !isArchived(m) || (byMember.get(m.id)?.length ?? 0) > 0)
+              .map((m) => {
               const rows = byMember.get(m.id) ?? [];
               const s = summarize(rows);
               const hasFlagged = rows.some((e) => isForgotten(e, now));

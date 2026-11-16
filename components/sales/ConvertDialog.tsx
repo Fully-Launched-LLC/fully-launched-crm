@@ -6,6 +6,7 @@ import type { Lead, TeamMember } from "@/lib/types";
 import { BRANCHES, type Branch } from "@/lib/theme";
 import { defaultOwnerFor, projectSourceFor } from "@/lib/leads/convert";
 import { LEAD_LIST_COLUMNS, type LeadListRow } from "@/lib/leads/list";
+import { activeMembers } from "@/lib/team";
 
 // Move to Interested (Sales detail panel): turns a business (leads row)
 // into a project at stage Interested.
@@ -165,7 +166,7 @@ export default function ConvertDialog({
               className={input}
             >
               <option value="">Nobody yet</option>
-              {members.map((m) => (
+              {activeMembers(members).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                   {branch && (m.lead_branches ?? []).includes(branch) ? ` (leads ${branch})` : ""}

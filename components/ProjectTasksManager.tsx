@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isTaskOverdue, type ProjectTask, type ProjectTaskStatus, type TeamMember } from "@/lib/types";
 import TextCell from "@/components/table/TextCell";
 import DateCell from "@/components/table/DateCell";
+import { pickableMembers } from "@/lib/team";
 
 const STATUSES: ProjectTaskStatus[] = ["Not Started", "In Progress", "Done"];
 
@@ -111,7 +112,7 @@ export default function ProjectTasksManager({
                     className="w-full min-w-[8rem] rounded border border-transparent px-1.5 py-1 text-sm hover:border-neutral-300"
                   >
                     <option value="">Unassigned</option>
-                    {teamMembers.map((m) => (
+                    {pickableMembers(teamMembers, [task.owner]).map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.name}
                       </option>

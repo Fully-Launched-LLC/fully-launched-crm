@@ -23,6 +23,7 @@ import {
   type PeriodKind,
   type PnL,
 } from "@/lib/finance";
+import { pickableMembers } from "@/lib/team";
 
 const usd0 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD", maximumFractionDigits: 0 });
 const usd2 = new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" });
@@ -683,7 +684,7 @@ export default function FinanceTab({
                         className={cellInput}
                       >
                         <option value="">None</option>
-                        {members.map((mm) => (
+                        {pickableMembers(members, [x.owner]).map((mm) => (
                           <option key={mm.id} value={mm.id}>
                             {mm.name}
                           </option>

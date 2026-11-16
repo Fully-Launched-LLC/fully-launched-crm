@@ -12,7 +12,7 @@ import { useOutcomeToast } from "@/components/sales/OutcomeToast";
 // Interested).
 //
 // Whose calendar: the team member with SALES_CALL_EMAIL (matched on email,
-// like PINNED_MEMBER_COLORS, so a rename doesn't break it); the link comes
+// so a rename doesn't break it); the link comes
 // from team_members.booking_link, FALLBACK_LINK when it's empty.
 
 export const SALES_CALL_EMAIL = "luke@fullylaunched.com";

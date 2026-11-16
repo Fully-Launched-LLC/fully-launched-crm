@@ -1,5 +1,6 @@
 import type { Project, TeamMember } from "@/lib/types";
 import { bookingUrl } from "@/lib/booking";
+import { activeMembers } from "@/lib/team";
 
 // "Book a call" on the Manage Project page: everyone with a Cal.com link,
 // the project's Owners first. Links are pre-filled with the client's name and
@@ -14,7 +15,7 @@ export default function BookCallSection({
   teamMembers: TeamMember[];
   currentMemberId: string | null;
 }) {
-  const bookable = teamMembers
+  const bookable = activeMembers(teamMembers)
     .map((m) => ({
       member: m,
       url: m.booking_link

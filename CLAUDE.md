@@ -4,24 +4,23 @@
 
 - Live at `crm.fullylaunched.com`. Projects (25 rows), leads (32), contacts (26) have real data as of 2026-10-30.
 - Built: Projects (Table/Kanban/Manage), Leads (`/leads`, was Sales at `/sales`: Find + History, one-click outcomes, Move to Interested; migrations 017, 018), Contacts (grouping/merge), Transactions (Admin), Team (roster + directory), Dashboard, Stripe Piece 1 (Deposit/Build invoices), Cal.com stages 1 and 2.
-- **Phase 1 Time clock: built; migration 014 applied to live 2026-10-30** (via MCP `apply_migration`, in migration history). Awaiting Luke's localhost click-through.
-- Next: Phase 2 Payouts + Earn-up (needs the `project_hourly` rate from Luke; commission = cash collected, see roadmap below), Phase 3 Onboarding (needs `docs/onboarding/tait.md` + `elias.md`), Phase 4 Integrations (Social card, Lead Finder import contract).
+- **Phase 1 Time clock: built; migration 014 applied to live 2026-10-30** (via MCP `apply_migration`, in migration history).
+- Next: Phase 2 Payouts + Earn-up (commission = cash collected, see roadmap below), Phase 3 Onboarding, Phase 4 Integrations. All open work is in **Current punch list** (one list).
 - **Migration drift: resolved 2026-10-30.** `013b_baseline_live_policies.sql` (applied, in history) recreates the live CRM functions, triggers, policies and the `clients_owner_gin` index; proven a no-op on live. A fresh replay of schema.sql + 002..014 now matches live for the CRM tables and runs without FL-social-dash (013's `social_*` revokes are guarded by `to_regprocedure`). Apply future migrations with MCP `apply_migration` so they land in history. `set_updated_at()` is shared with FL-social-dash triggers. 016 (applied) normalized every role check and swept grants (see Roles).
-- Open item: Default privileges in public still grant new objects to anon/public. Shared schema with FL-social-dash, decide with Tait before changing.
-- Open items: Cal.com webhook secret + real test booking; Stripe env vars + end-to-end test; Salesperson RLS verification pass.
 
 ## Recent changes (last 10)
 
-1. 036 to 040 (applied Nov 6 / Nov 9; 039 dropped the unused deal fields, 040 company record follows a project rename while untouched): **Deal Desk** deployed (see Deal Desk status): Settings > Deal Desk, Projects badge for signed deals, master template fixes, production days opt-in, internal deal doc auto-written to Drive, commission / earn-up 10% of deal value, labor = project hours x $60, Google env checks.
-2. 035 (applied Nov 6): Air-Rite Heating & Cooling split from Comfort X Design (3 Air-Rite projects); new projects join a company by name or email domain only, a phone match only suggests (dismissals persisted); any move to Lost goes through Remove from pipeline (`projects_guard_lost`; Admins can force it on the project page). Guard tested on live as a Salesperson in a rolled-back transaction: direct update refused (42501), `remove_from_pipeline` allowed.
-3. 030 to 034 (applied Nov 6; history order 030, 031, 033, 032, 034 after a retry): **ownership** (first outreach auto-assigns `leads.owner`; RLS on `lead_touches` insert = owner, unassigned or Admin/Manager; `reassign_lead()` with reason; daily pg_cron `release_stale_leads()` after 60 days, exempt: active project, not_interested / dead / converted, personal_network, future revisit; `lead_touches.event` timeline rows: note, reassigned, released, removed_from_pipeline, project_lost). **One lead per company**: `projects.lead_id` (all its projects), `leads.project_id` = the active project or null; backfill grouped projects by name / email domain / phone (Comfort X Design + the 3 Air-Rite projects share a phone and became one company). The 5 "Leads"-stage projects moved to Leads and were deleted (Decade: Not now, revisit May 6). **Stages** Interested, Negotiation, Signed, In Progress, Subscriber, Complete (+ Lost; Kanban hides Lost, "Show lost"). **Remove from pipeline** (`remove_from_pipeline()`, any member; reason + note, Not now or Not interested back in History); project delete Admin only. **Owner contact** `owner_phone` / `owner_email` (never from scans). `log_meeting` matches owner_email, whole-word titles, contact name after the last comma. Sales tab renamed **Leads** (`/leads`, `/sales` redirects); History shows every source. Side panel reordered (header with Owned by / Reassign / Next chip / projects, top 3 gaps, Call / Run audit / Draft email + More, timeline, Business and Owner contact blocks, Log a touch; Talked to row and Next action section removed).
-4. 029 (applied): Not now and Dead outcomes (trigger: dead → status dead; not_now never a reply). Who said no? on Not interested (owner / staff), optional Talked to on calls, History > Businesses split into 10 sections incl. Reach the owner and Clients, Set follow-up inline, lighter dim for front-desk no, Dead last, auto-suggest Not now after 5 tries.
-5. 028 (applied): saved searches removed (table dropped). History gets a Searches section (every run, Mine/All, 25 a page, contacted since, Open, Run again); Recent searches left the launch pad. 027 (applied): Granola meetings attach to a call logged within 3 hours instead of a second entry; Granola notes under the call.
-6. 026 (applied): enrichment_lookups. Search modes (All, Website, Social media, AI, E-commerce) filter and rank Mission Control, saved with runs and saved searches, set the default email / call script branch. Find owner contact via Apollo.io (on demand, logged, Use as business owner).
-7. Software detection in six groups (field service, CRM / marketing, reviews / messaging, chat, industry, payments / booking) with one grouped "Runs on" badge and export column; field-service + CRM tools feed the AI pitch. Contact discovery: every email and phone from homepage, About, Contact and Facebook pages with its source, Make primary. Dossier Book a call opens Move to Interested.
-8. 025 (applied): saved searches. Results always show (contacted dimmed, stopped dimmed more, confirm before logging on them, never-contacted first); Visited back under Call result; audit page rebuilt as the business dossier (website score breakdown with new SEO/AEO checks and sitemap, Google profile score, email drafts and call script with five branch tabs incl. General); website score formula redone (Basics/SEO/AEO/Speed); side preview reordered with tan outlines on outcome buttons.
-9. 024 (applied): outcome buttons in three groups (Call result, Email, LinkedIn; `connected` outcome added), Emailed opens Draft email, LinkedIn outcomes ask for the owner's profile; meetings no longer change status; `log_meeting` matches a phone number in the title.
-10. 023 (applied): Not available outcome (`not_available` + `lead_touches.details`), follow-up prompt and Follow-ups due (History filter, nav badge), Draft email (templates per branch, Open in Gmail, Mark as sent), plain-sentence touch wording.
+1. 041 (applied Nov 15, 2026 via `apply_migration`): **Team > Finance** (`/team/finance`, `components/team/FinanceTab.tsx`, math in `lib/finance.ts` + tests). Admin/Manager only (tab hidden, page redirects, RLS). 041 adds `projects.win_probability` / `expected_sub_months` / `related_party` (default false, excludes a client from LTV/CAC with a badge; no project is flagged, **Grad Gig counts as a normal client in LTV/CAC**), `expenses` (Admin write, Admin/Manager read, 8 seeded), deal_settings `assumed_labor_pct` 32.5, `payment_fee_pct` 2.5, `default_sub_months` 12, `stage_probability`, and Admin/Manager **read** on `transactions` (writes stay Admin). No tool builder fee (dropped in 039). Revenue = transactions with payee null; labor = project hours x `project_hourly_rate` when logged, else assumed %; new client = paying/subscribing company whose first project was created in the period. `npm test` glob is now quoted so `lib/*.test.ts` runs too.
+2. 036 to 040 (applied Nov 6 / Nov 9; 039 dropped the unused deal fields, 040 company record follows a project rename while untouched): **Deal Desk** deployed (see Deal Desk status): Settings > Deal Desk, Projects badge for signed deals, master template fixes, production days opt-in, internal deal doc auto-written to Drive, commission / earn-up 10% of deal value, labor = project hours x $60, Google env checks.
+3. 035 (applied Nov 6): Air-Rite Heating & Cooling split from Comfort X Design (3 Air-Rite projects); new projects join a company by name or email domain only, a phone match only suggests (dismissals persisted); any move to Lost goes through Remove from pipeline (`projects_guard_lost`; Admins can force it on the project page). Guard tested on live as a Salesperson in a rolled-back transaction: direct update refused (42501), `remove_from_pipeline` allowed.
+4. 030 to 034 (applied Nov 6; history order 030, 031, 033, 032, 034 after a retry): **ownership** (first outreach auto-assigns `leads.owner`; RLS on `lead_touches` insert = owner, unassigned or Admin/Manager; `reassign_lead()` with reason; daily pg_cron `release_stale_leads()` after 60 days, exempt: active project, not_interested / dead / converted, personal_network, future revisit; `lead_touches.event` timeline rows: note, reassigned, released, removed_from_pipeline, project_lost). **One lead per company**: `projects.lead_id` (all its projects), `leads.project_id` = the active project or null; backfill grouped projects by name / email domain / phone (Comfort X Design + the 3 Air-Rite projects share a phone and became one company). The 5 "Leads"-stage projects moved to Leads and were deleted (Decade: Not now, revisit May 6). **Stages** Interested, Negotiation, Signed, In Progress, Subscriber, Complete (+ Lost; Kanban hides Lost, "Show lost"). **Remove from pipeline** (`remove_from_pipeline()`, any member; reason + note, Not now or Not interested back in History); project delete Admin only. **Owner contact** `owner_phone` / `owner_email` (never from scans). `log_meeting` matches owner_email, whole-word titles, contact name after the last comma. Sales tab renamed **Leads** (`/leads`, `/sales` redirects); History shows every source. Side panel reordered (header with Owned by / Reassign / Next chip / projects, top 3 gaps, Call / Run audit / Draft email + More, timeline, Business and Owner contact blocks, Log a touch; Talked to row and Next action section removed).
+5. 029 (applied): Not now and Dead outcomes (trigger: dead → status dead; not_now never a reply). Who said no? on Not interested (owner / staff), optional Talked to on calls, History > Businesses split into 10 sections incl. Reach the owner and Clients, Set follow-up inline, lighter dim for front-desk no, Dead last, auto-suggest Not now after 5 tries.
+6. 028 (applied): saved searches removed (table dropped). History gets a Searches section (every run, Mine/All, 25 a page, contacted since, Open, Run again); Recent searches left the launch pad. 027 (applied): Granola meetings attach to a call logged within 3 hours instead of a second entry; Granola notes under the call.
+7. 026 (applied): enrichment_lookups. Search modes (All, Website, Social media, AI, E-commerce) filter and rank Mission Control, saved with runs and saved searches, set the default email / call script branch. Find owner contact via Apollo.io (on demand, logged, Use as business owner).
+8. Software detection in six groups (field service, CRM / marketing, reviews / messaging, chat, industry, payments / booking) with one grouped "Runs on" badge and export column; field-service + CRM tools feed the AI pitch. Contact discovery: every email and phone from homepage, About, Contact and Facebook pages with its source, Make primary. Dossier Book a call opens Move to Interested.
+9. 025 (applied): saved searches. Results always show (contacted dimmed, stopped dimmed more, confirm before logging on them, never-contacted first); Visited back under Call result; audit page rebuilt as the business dossier (website score breakdown with new SEO/AEO checks and sitemap, Google profile score, email drafts and call script with five branch tabs incl. General); website score formula redone (Basics/SEO/AEO/Speed); side preview reordered with tan outlines on outcome buttons.
+10. 024 (applied): outcome buttons in three groups (Call result, Email, LinkedIn; `connected` outcome added), Emailed opens Draft email, LinkedIn outcomes ask for the owner's profile; meetings no longer change status; `log_meeting` matches a phone number in the title.
+
 
 ## Stack & infra
 
@@ -52,8 +51,7 @@
   - White text on Websites/Ecommerce/AI.
 - Stage badges are **pastel** (`STAGE_COLORS`: `-50` tint, `-700` text, `-200` border, all ≥ 4.5:1): Leads gray, Interested fuchsia, Signed indigo, In Progress amber, Complete green, Subscriber teal, Lost red. The stage *chart* keeps stronger `-500`-ish fills (`STAGE_CHART_COLORS`).
 - `tailwind.config.ts` `content` must include `./lib/**` — all badge/pill class strings live in `lib/theme.ts`, and before this was added none of them were generated (badges rendered uncolored).
-- Owner/Salesperson pill colors are per person (`memberColors()` in `lib/team.ts`, palettes in `lib/theme.ts`): `PINNED_MEMBER_COLORS` fixes a color by email; everyone else rotates through `MEMBER_COLOR_ROTATION` (purple, orange, emerald, pink, cyan, lime) in `team_members` (`created_at`, `id`) order, so new members get a color with no code change. Adding a member never changes existing colors; removing one shifts the colors of members added after them. Unknown ids render gray.
-- **Deliberate exception to "never hardcode team member names":** Luke is pinned to blue by his email (`luke@fullylaunched.com`) in `PINNED_MEMBER_COLORS`. It's keyed on email, not name, so a rename doesn't break it; if his login email changes, update it there. If more per-person colors are wanted, move this to a `team_members.color` column instead of adding emails.
+- **Person pill colors are stored** in `team_members.color` (migration 043), a palette name mapped to classes by `MEMBER_COLORS` in `lib/theme.ts`; `memberColors()` (`lib/team.ts`) just looks it up, no stored color = gray. The palette leaves out red, orange, green and blue (those mean branches): violet, purple, fuchsia, pink, teal, cyan, slate, stone, amber, yellow. New members get the least-used palette color on insert (trigger `team_members_assign_color`, ties in the order amber, fuchsia, stone, yellow, violet, purple, teal, pink, cyan, slate). Adding or archiving someone never changes anyone else's color. Nov 16 mapping: Luke violet, Talon purple, Matteo teal, Tait pink, Declan cyan, Elias slate (archived). (Replaced the email-pinned blue for Luke and the six-color rotation.)
 
 ## Data model (confirmed live via Supabase, 2026-09-22)
 
@@ -145,7 +143,8 @@ Three-tier: Admin / Manager / Salesperson.
 
 - Role checks apply only to Transactions, team_members writes (migration 005), project deletion (Admin only since migration 033; was Admin or Manager), reassigning a business (`reassign_lead`, Admin/Manager) and logging on a business someone else owns (Admin/Manager, migration 030).
 - Never hardcode team member names — roster is data-driven.
-- Salesperson role-gating (e.g. Talon: no Transactions access) is implemented via RLS but **not verified end-to-end**. Deferred to a dedicated pass, not bundled into unrelated feature work.
+- **Archive, never delete, a member who leaves** (`team_members.archived_at`, migration 044). Archived members are left out of every picker, filter, the Team page, booking links and the `lead_branches` default-owner lookup (`activeMembers()` / `pickableMembers()` in `lib/team.ts`; a picker still shows an archived member who is the current value, so it can be cleared but not newly picked). Pages keep loading the full roster so history (time entries, closed projects, lead touches, payouts) still shows the name. `getCurrentTeamMember()` returns null for an archived member. Not yet in the database identity rule: `is_team_member()` and the role functions don't check `archived_at` (moot for Elias, who has no auth user).
+- Salesperson role-gating (e.g. Talon: no Transactions access) is implemented via RLS but **not verified end-to-end**. A dedicated pass is on the punch list, not bundled into unrelated feature work.
 - "+ Add Team Member" UI: role selector across the three roles, roster editable via the app, not hardcoded. New members must be given a role when added; there's no meaningful default.
 
 ### Seed roster
@@ -156,7 +155,7 @@ Initial team (email pattern `firstname@fullylaunched.com`). This is the starting
 |---|---|---|
 | Luke | luke@fullylaunched.com | Admin |
 | Tait | tait@fullylaunched.com | Manager |
-| Elias | elias@fullylaunched.com | Manager |
+| Elias | elias@fullylaunched.com | Manager (archived Nov 16, 2026) |
 | Matteo | matteo@fullylaunched.com | Manager |
 | Talon (sales) | talon@fullylaunched.com | Salesperson |
 
@@ -401,7 +400,7 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 - **No in-app resend/void.** After sending, the Invoicing field shows "… invoice sent · View in Stripe"; resend or void in the Stripe dashboard. `stripe_deposit_invoice_id` / `stripe_build_invoice_id` block a second send.
 - **Webhook** (`app/api/webhooks/stripe/route.ts`, excluded from the auth middleware): verifies the Stripe signature before anything else. `invoice.paid` → `payment_status` Deposit Paid / Paid, only for invoices this app created (metadata) whose id matches the stored one, and never moves status backwards. `invoice.payment_failed` → logged only, no action. Writes via the service-role client (`lib/supabase/admin.ts`, server-only, bypasses RLS — webhook use only).
 - Duplicate never copies `stripe_*` ids.
-- `payment_status` is still hand-editable by any authenticated user (projects update isn't role-gated) — known gap, not addressed.
+- `payment_status` is still hand-editable by any authenticated user (projects update isn't role-gated). Known gap, on the punch list.
 
 ### Piece 2 — Subscriptions (not built)
 
@@ -411,7 +410,7 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 
 ## Roadmap: Phase 2 decisions (not built yet)
 
-- Rates in `payout_rates` (Admin-editable, nothing hardcoded): seed management_hourly = 50, sales_commission_pct = 10; project_hourly still needs a number from Luke.
+- Rates in `payout_rates` (Admin-editable, nothing hardcoded): seed management_hourly = 50, sales_commission_pct = 10. `deal_settings.project_hourly_rate` is $60; confirm $60/hr is the correct rate with Luke before Payouts goes live.
 - Commission is earned on cash collected: only paid transactions count, credited to the payout period containing the paid date. A later refund creates a negative commission line in the next open period; closed periods are never edited.
 - Closed payout periods are immutable. Corrections go in as adjustment lines in an open period, with a required note.
 - **Once a payout period is closed, every time entry in it is fully locked, including the accomplishment note for non-Admins** (today the owner can still edit their note on any closed entry; Phase 2 must add the period check to the `time_entries` update trigger).
@@ -420,18 +419,30 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 
 ## Deferred / explicitly out of scope
 
-- Salesperson role-gating end-to-end verification
-- Cal.com stage 2 — webhook + call history (see Cal.com section)
 - Stripe subscriptions (Piece 2); automatic subscription charging needs a separate decision before building (see Stripe section)
+  - Kevin Dickson (PO Reader, $100/mo) and Mark Johnson/Hesedea (Shopify Retainer, $3,000/mo) already have live subscriptions created directly in Stripe, billed on the 1st. The CRM subscription build must link/import existing Stripe subscriptions by customer, never create duplicates.
 - Customer-facing portal (separate client auth) — own future project, not started
 - AI-generated proposals/SoWs, LinkedIn OAuth, notifications — no defined format/scope yet
 
 ## Current punch list (priority order)
 
-1. ~~"+ Add Team Member" screen (three-role picker)~~ — done, shipped in 247e927
-2. Load real client data — get Luke's actual client list first, don't invent sample data (all tables are currently empty)
-3. Cal.com: set `CALCOM_WEBHOOK_SECRET` on Vercel, set up each person's Cal.com webhook + booking link, then a real test booking to confirm metadata/payload fields
-4. Stripe: set env vars + webhook endpoint (test mode) and test Deposit/Build invoices end to end; then Piece 2 (subscriptions)
+The one list of open work. Feature sections point here.
+
+1. ~~"+ Add Team Member" screen (three-role picker)~~ done, shipped in 247e927
+2. ~~Load real client data~~ done: projects, leads and contacts have real data
+3. **Lock `payment_status` to Admins** (security): any signed-in user can edit it today (projects update isn't role-gated). Enforce in the database, not only the UI.
+4. ~~Remove Elias~~ done Nov 16: archived, not deleted (migrations 043 stored pill colors and 044 archived_at, both applied from the SQL editor, so not in migration history). Hesedea project owner and the Tequila Limón lead moved to Matteo / Luke; Whitney Banks' Ecommerce project to Matteo; her Complete, paid website project keeps Elias as owner (closed record). Luke leads AI + Websites.
+5. **Branch colors everywhere:** AI red, Media orange, Ecommerce green, Websites blue. Single swap point `BRANCH_FILL` in `lib/theme.ts` (feeds Tailwind `branch-*`, badges, dashboard chart); update the Branding section here too. Check text contrast on each fill (Media gold currently uses navy text for AA) and that AI red is distinct from the red overdue/Lost styling. Person pills already avoid red/orange/green/blue (043).
+6. Time clock (Phase 1): Luke's localhost click-through.
+7. Cal.com: set `CALCOM_WEBHOOK_SECRET` on Vercel, set up each person's Cal.com webhook + booking link, then a real test booking to confirm metadata/payload fields.
+8. Stripe Piece 1: set env vars + webhook endpoint (test mode) and test Deposit/Build invoices end to end. (Piece 2 subscriptions is on hold, see Deferred.)
+9. Phase 2 Payouts + Earn-up: confirm $60/hr is the correct rate with Luke before Payouts goes live.
+10. Phase 3 Onboarding: needs `docs/onboarding/tait.md`.
+11. Phase 4 Integrations: Social card, Lead Finder import contract.
+12. Deal Desk: end-to-end test on production; AI Tool Build Exclusions wording (awaits Luke); SOW still has blank "Signature: ____" lines under Section 14.
+13. Salesperson access check: verify the Salesperson role (e.g. Talon: no Transactions) end to end.
+14. Granola sync job (calls `log_meeting` with the service role key); not built.
+15. Default privileges in public still grant new objects to anon/public. Shared schema with FL-social-dash, decide with Tait before changing.
 
 ## Deal Desk status
 
@@ -448,4 +459,4 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 - **Tests:** `npm test` (node:test via tsx, `lib/**/*.test.ts`): render (monthly-only, production days, approval blockers) and internal (10% / 10%, labor, margin).
 - **Env (server-only):** `GOOGLE_SERVICE_ACCOUNT_JSON_B64`, `GOOGLE_DRIVE_TEMPLATES_FOLDER_ID`, `GOOGLE_DRIVE_CLIENTS_FOLDER_ID`, the two template IDs, `ANTHROPIC_API_KEY_DOCS`, `DOCS_MODEL` (optional, default `claude-sonnet-5-5`), `NEXT_PUBLIC_APP_URL`, `SUPABASE_SERVICE_ROLE_KEY`. All on Vercel (`GOOGLE_DRIVE_CLIENTS_FOLDER_ID` fixed Nov 9: it held its own name). Local `.env.local` has no service role key.
 - **Build notes:** use the per-API packages `@googleapis/docs`, `@googleapis/drive` and `google-auth-library`, never the full `googleapis` package (its types ran the Next type check out of memory). The PDF.js worker is served from `public/pdfjs/` (copied by `scripts/copy-pdf-worker.mjs` on predev / prebuild, gitignored, `/pdfjs/` excluded from the auth middleware); bundling it with `new URL(..., import.meta.url)` breaks the Next 14 Terser step.
-- **Open:** end-to-end test on production; AI Tool Build Exclusions wording awaits Luke; SOW still has blank "Signature: ____" lines under Section 14.
+- **Open:** see Current punch list (Deal Desk).

@@ -1,13 +1,14 @@
 import type { Branch, Source } from "@/lib/theme";
 import type { TeamMember } from "@/lib/types";
+import { activeMembers } from "@/lib/team";
 
 // Move to Interested (Leads drawer): helpers shared by the dialog.
 
 // Project owner default: the team member who leads that branch
-// (team_members.lead_branches, migration 017).
+// (team_members.lead_branches, migration 017). Archived members never count.
 export function defaultOwnerFor(branch: Branch | "", members: TeamMember[]): string | null {
   if (!branch) return null;
-  return members.find((m) => (m.lead_branches ?? []).includes(branch))?.id ?? null;
+  return activeMembers(members).find((m) => (m.lead_branches ?? []).includes(branch))?.id ?? null;
 }
 
 // projects.source is a fixed list (projects_source_check); leads.source is

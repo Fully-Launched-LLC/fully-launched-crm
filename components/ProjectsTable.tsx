@@ -25,6 +25,7 @@ import { projectDetailHref } from "@/lib/projects";
 import { branchChangePatch } from "@/lib/channels";
 import ChannelsField from "@/components/ChannelsField";
 import RemoveFromPipelineDialog from "@/components/RemoveFromPipelineDialog";
+import { activeMembers } from "@/lib/team";
 
 type SortDir = "asc" | "desc";
 
@@ -102,7 +103,7 @@ export default function ProjectsTable({
   });
 
   const memberOptions = useMemo(
-    () => teamMembers.map((m) => ({ value: m.id, label: m.name })),
+    () => activeMembers(teamMembers).map((m) => ({ value: m.id, label: m.name })),
     [teamMembers]
   );
   const membersById = useMemo(

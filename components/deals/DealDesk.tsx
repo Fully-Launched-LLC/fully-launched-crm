@@ -19,6 +19,7 @@ import {
   type DealSignature,
   type DocKind,
 } from "@/lib/deals/types";
+import { pickableMembers } from "@/lib/team";
 
 export type DealDeskData = {
   deal: Deal | null;
@@ -297,7 +298,7 @@ export default function DealDesk({
               onChange={(e) => saveDeal({ owner_id: e.target.value || null })}
             >
               <option value="">Unassigned</option>
-              {members.map((m) => (
+              {pickableMembers(members, [deal.owner_id]).map((m) => (
                 <option key={m.id} value={m.id}>
                   {m.name}
                 </option>

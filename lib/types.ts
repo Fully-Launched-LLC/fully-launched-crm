@@ -9,6 +9,10 @@ export type TeamMember = {
   // Branches this person leads (migration 017). The Convert to Interested
   // modal defaults the project owner from it.
   lead_branches: Branch[];
+  // Pill color name (migration 043, lib/theme.ts MEMBER_COLORS).
+  color: string | null;
+  // Set = off the team (migration 044). Kept for history, hidden from pickers.
+  archived_at: string | null;
   created_at: string;
 };
 

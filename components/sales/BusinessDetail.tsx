@@ -40,6 +40,7 @@ import FindOwner from "@/components/sales/FindOwner";
 import { useSalesFlags } from "@/components/sales/SalesFlags";
 import { modeEmailKind, type SearchMode } from "@/lib/sales/searchModes";
 import { runsOn } from "@/lib/lead-finder/software";
+import { activeMembers } from "@/lib/team";
 
 // The side preview for one business, used by Find (search results),
 // History and the audit dossier. Order:
@@ -577,7 +578,7 @@ export default function BusinessDetail({
           <select className="field" aria-label="Assign to" style={{ width: "auto" }} value={reassign.to}
             onChange={(e) => setReassign({ ...reassign, to: e.target.value })}>
             <option value="">Unassigned</option>
-            {members.map((m) => (
+            {activeMembers(members).map((m) => (
               <option key={m.id} value={m.id}>{m.name}</option>
             ))}
           </select>
