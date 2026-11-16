@@ -184,7 +184,7 @@ Deleting a project is limited to **Admin or Manager**, enforced by the `admin or
 
 **Remove from pipeline** (everyone, while not Lost; `components/RemoveFromPipelineDialog.tsx` → `remove_from_pipeline(project, reason, note, revisit)`, migrations 033/034): reasons Not interested, Just networking, Timing / not now, Budget, Went with someone else, Other (note required). Project → Lost with `lost_reason`. Its company record returns to Leads History: Timing / not now and Just networking → Not now with a revisit date (default 6 months), the rest → Not interested; timeline "Removed from pipeline Nov 6 · Just networking · <note> · Luke". If another project of the same company is still active, only the timeline entry is added. Any move to Lost (Kanban drag, the stage badge in the Table or on the project page) opens this dialog; Cancel leaves the stage. Admins also get "Set Lost without a reason" in the dialog on the project page only. The database enforces it: `projects_guard_lost` (migration 035) refuses a direct stage change to Lost unless it comes from `remove_from_pipeline()` or an Admin.
 
-**Duplicate project** (any authenticated user): inserts `duplicateProjectPayload()` (`lib/projects.ts`) — same stage, "(Copy)" appended to `client_name`, no id/timestamps/`scheduled_call`/Stripe fields. Tasks and transactions aren't copied. On success it opens the copy's detail page, carrying over `?from=`/`?tab=` so the back link still returns to the original view.
+**Duplicate project** (any authenticated user): inserts `duplicateProjectPayload()` (`lib/projects.ts`) — same stage, "(Copy)" appended to `client_name`, no id/timestamps/`scheduled_call`/Stripe fields/`payment_status`. Tasks and transactions aren't copied. On success it opens the copy's detail page, carrying over `?from=`/`?tab=` so the back link still returns to the original view.
 
 ## Leads (`/leads`, formerly Sales at `/sales`)
 
@@ -400,7 +400,7 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 - **No in-app resend/void.** After sending, the Invoicing field shows "… invoice sent · View in Stripe"; resend or void in the Stripe dashboard. `stripe_deposit_invoice_id` / `stripe_build_invoice_id` block a second send.
 - **Webhook** (`app/api/webhooks/stripe/route.ts`, excluded from the auth middleware): verifies the Stripe signature before anything else. `invoice.paid` → `payment_status` Deposit Paid / Paid, only for invoices this app created (metadata) whose id matches the stored one, and never moves status backwards. `invoice.payment_failed` → logged only, no action. Writes via the service-role client (`lib/supabase/admin.ts`, server-only, bypasses RLS — webhook use only).
 - Duplicate never copies `stripe_*` ids.
-- `payment_status` is still hand-editable by any authenticated user (projects update isn't role-gated). Known gap, on the punch list.
+- **`payment_status` is Admin-only** (migration 042, trigger `projects_guard_payment_status`; not applied yet, see punch list). App side (Nov 16): the Payment Status field on the project page is read-only for non-Admins; Duplicate doesn't copy it; the invoice route (Admin or Manager) writes it with the service-role client after its role check; the Stripe webhook already writes it as service role; Finance > Record payment writes it as the user and is Admin-only (UI, and transactions RLS).
 
 ### Piece 2 — Subscriptions (not built)
 
@@ -430,7 +430,7 @@ The one list of open work. Feature sections point here.
 
 1. ~~"+ Add Team Member" screen (three-role picker)~~ done, shipped in 247e927
 2. ~~Load real client data~~ done: projects, leads and contacts have real data
-3. **Lock `payment_status` to Admins** (security): any signed-in user can edit it today (projects update isn't role-gated). Enforce in the database, not only the UI.
+3. **Lock `payment_status` to Admins** (security): app side done Nov 16 (see Stripe Piece 1). Pending: apply migration 042 in the SQL editor and run the three verify blocks.
 4. ~~Remove Elias~~ done Nov 16: archived, not deleted (migrations 043 stored pill colors and 044 archived_at, both applied from the SQL editor, so not in migration history). Hesedea project owner and the Tequila Limón lead moved to Matteo / Luke; Whitney Banks' Ecommerce project to Matteo; her Complete, paid website project keeps Elias as owner (closed record). Luke leads AI + Websites.
 5. ~~Branch colors everywhere~~ done Nov 16: AI crimson, Media orange, Ecommerce green, Websites blue, white text (see Branding).
 6. Time clock (Phase 1): Luke's localhost click-through.

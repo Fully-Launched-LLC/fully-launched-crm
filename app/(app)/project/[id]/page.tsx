@@ -119,6 +119,8 @@ export default async function ProjectDetailPage({
         canDelete={currentMember?.role === "Admin"}
         // UI only — the invoice route re-checks the role server-side.
         canInvoice={canSendInvoices(currentMember?.role)}
+        // UI only. The real gate is the 042 trigger (Admin only).
+        canEditPaymentStatus={currentMember?.role === "Admin"}
         stripeDashboardBase={stripeDashboardBase()}
         currentMemberId={currentMember?.id ?? null}
         calls={calls}

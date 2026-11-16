@@ -1,5 +1,6 @@
 import type Stripe from "stripe";
 import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/admin";
 import { getCurrentTeamMember } from "@/lib/auth";
 import { getStripe } from "@/lib/stripe";
 import {
@@ -129,6 +130,17 @@ export async function POST(
   };
   const description = `${label[kind]} — ${project.client_name.trim()}`;
 
+  // payment_status is Admin-only in the database (migration 042), but Managers
+  // send invoices too. After the role check above, the status write goes
+  // through the service-role client. Created before anything is sent, so a
+  // missing key fails here instead of after Stripe has emailed the invoice.
+  let admin: ReturnType<typeof createAdminClient>;
+  try {
+    admin = createAdminClient();
+  } catch (e) {
+    return fail(500, e instanceof Error ? e.message : String(e));
+  }
+
   try {
     const stripe = getStripe();
     const customer = await resolveCustomer(supabase, stripe, project, email);
@@ -173,7 +185,9 @@ export async function POST(
       [idField]: invoice.id,
       payment_status: STATUS_AFTER_SEND[kind],
     };
-    const { error: saveError } = await supabase
+    // Service role: this row was already read with the caller's session
+    // (RLS), and the caller's role was checked above.
+    const { error: saveError } = await admin
       .from("projects")
       .update(patch)
       .eq("id", project.id);

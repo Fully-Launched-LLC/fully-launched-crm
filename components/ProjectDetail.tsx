@@ -80,6 +80,7 @@ export default function ProjectDetail({
   back,
   canDelete,
   canInvoice,
+  canEditPaymentStatus,
   stripeDashboardBase,
   currentMemberId,
   calls,
@@ -93,6 +94,9 @@ export default function ProjectDetail({
   canDelete: boolean;
   // Admin/Manager — hides the Send buttons; the invoice route enforces it.
   canInvoice: boolean;
+  // Admin only. The real gate is the projects_guard_payment_status trigger
+  // (migration 042); others see the status read-only.
+  canEditPaymentStatus: boolean;
   // For "View in Stripe" links; null when Stripe isn't configured.
   stripeDashboardBase: string | null;
   // Sent as metadata[booked_by] on Cal.com links.
@@ -427,6 +431,11 @@ export default function ProjectDetail({
               )}
             </Field>
             <Field label="Payment Status">
+              {!canEditPaymentStatus ? (
+                <p className="px-1.5 py-1 text-sm text-foreground" title="Only an Admin can change payment status">
+                  {project.payment_status ?? "Not set"}
+                </p>
+              ) : (
               <select
                 value={project.payment_status ?? ""}
                 onChange={(e) =>
@@ -441,6 +450,7 @@ export default function ProjectDetail({
                   </option>
                 ))}
               </select>
+              )}
             </Field>
             <Field label="Build End Date">
               <DateCell value={project.build_end_date} onCommit={(v) => update({ build_end_date: v })} />

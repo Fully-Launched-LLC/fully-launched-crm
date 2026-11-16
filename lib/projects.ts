@@ -21,7 +21,10 @@ type DuplicateOmit =
   | "subscription_status"
   | "stripe_deposit_invoice_id"
   | "stripe_build_invoice_id"
-  | "scheduled_call";
+  | "scheduled_call"
+  // Admin-only since migration 042: a non-Admin's insert with a value is
+  // refused, and the copy hasn't been paid anyway.
+  | "payment_status";
 
 export function duplicateProjectPayload(
   project: Project
@@ -37,6 +40,7 @@ export function duplicateProjectPayload(
     stripe_deposit_invoice_id,
     stripe_build_invoice_id,
     scheduled_call,
+    payment_status,
     ...rest
   } = project;
   /* eslint-enable @typescript-eslint/no-unused-vars */
