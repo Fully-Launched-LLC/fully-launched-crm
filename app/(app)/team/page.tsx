@@ -11,6 +11,7 @@ export default async function TeamPage() {
   // booking links. Only the UI differs — writes to team_members are
   // Admin-only in RLS (migration 005) regardless.
   const isAdmin = teamMember?.role === "Admin";
+  const canSeeFinance = isAdmin || teamMember?.role === "Manager";
 
   const supabase = createClient();
   const { data: members } = await supabase
@@ -27,7 +28,7 @@ export default async function TeamPage() {
           : "Cal.com booking links for booking a client call with the right person."}
       </p>
 
-      <TeamTabs />
+      <TeamTabs showFinance={canSeeFinance} />
 
       <div className="mt-6">
         {isAdmin ? (

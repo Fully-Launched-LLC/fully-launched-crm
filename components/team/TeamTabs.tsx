@@ -6,14 +6,17 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { label: "People", href: "/team" },
   { label: "Timesheets", href: "/team/timesheets" },
+  { label: "Finance", href: "/team/finance", adminOrManager: true },
 ];
 
 // In-page tabs for the Team section (the top nav keeps a single Team tab).
-export default function TeamTabs() {
+// Finance is Admin/Manager only: hidden here, and /team/finance redirects
+// everyone else server-side (RLS on transactions and expenses is the real gate).
+export default function TeamTabs({ showFinance = false }: { showFinance?: boolean }) {
   const pathname = usePathname();
   return (
     <div className="mt-4 flex gap-1 border-b border-neutral-200">
-      {TABS.map((tab) => (
+      {TABS.filter((tab) => !tab.adminOrManager || showFinance).map((tab) => (
         <Link
           key={tab.href}
           href={tab.href}

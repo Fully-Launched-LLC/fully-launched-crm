@@ -16,6 +16,7 @@ export default async function TimesheetsPage({
   // Everyone can review everyone's time (RLS: team read). Approve and edit
   // are Admin-only; the UI hides them, the database enforces it.
   const isAdmin = teamMember?.role === "Admin";
+  const canSeeFinance = isAdmin || teamMember?.role === "Manager";
 
   const supabase = createClient();
   const { data: members } = await supabase
@@ -31,7 +32,7 @@ export default async function TimesheetsPage({
         an Admin approves it.
       </p>
 
-      <TeamTabs />
+      <TeamTabs showFinance={canSeeFinance} />
 
       <div className="mt-6">
         <Timesheets
