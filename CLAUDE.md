@@ -2,7 +2,6 @@
 
 ## Current status (keep under 30 lines)
 
-- Live at `crm.fullylaunched.com`. Projects (25 rows), leads (32), contacts (26) have real data as of 2026-10-30.
 - Built: Projects (Table/Kanban/Manage), Leads (`/leads`, was Sales at `/sales`: Find + History, one-click outcomes, Move to Interested; migrations 017, 018), Contacts (grouping/merge), Transactions (Admin), Team (roster + directory), Dashboard, Stripe Piece 1 (Deposit/Build invoices), Cal.com stages 1 and 2.
 - **Phase 1 Time clock: built; migration 014 applied to live 2026-10-30** (via MCP `apply_migration`, in migration history).
 - Next: Phase 2 Payouts + Earn-up (commission = cash collected, see roadmap below), Phase 3 Onboarding, Phase 4 Integrations. All open work is in **Current punch list** (one list).
@@ -31,6 +30,26 @@
 - Keep-alive cron: `app/api/keep-alive/route.ts` + `vercel.json`, pings Supabase every 3 days to prevent free-tier auto-pause. Don't duplicate this. **Until 2026-09-23 it never actually ran** — the auth middleware redirected the cron's session-less request to `/login`. Fixed by excluding it in the `middleware.ts` matcher.
 - Server-to-server routes (crons, third-party webhooks) must skip the auth middleware: `/api/keep-alive` and everything under `/api/webhooks/` are excluded in the `middleware.ts` matcher. So are `/manifest.json` and `/sw.js` (browsers fetch the manifest without cookies; a login redirect breaks install). Put new webhooks under `/api/webhooks/<provider>` and have each handler verify its caller itself (e.g. the provider's signature) — nothing upstream authenticates them.
 
+## Database access (Supabase MCP)
+
+Two MCP servers, both project ref okvjdpqnqyrzpbaneivu (FL CRM production):
+- supabase-flcrm-ro: read-only (read_only=true, runs as supabase_read_only_user). Use for every read. No approval prompt.
+- supabase-flcrm: connects as postgres (superuser, bypasses RLS and role checks such as projects_guard_payment_status). Use only for writes and schema changes. execute_sql and apply_migration are gated by "ask" rules in .claude/settings.local.json and always prompt.
+
+Rules:
+- Reads: run anytime on supabase-flcrm-ro. Never use supabase-flcrm for a read.
+- Writes and schema changes, before running anything:
+  1. Write the change as one transaction: begin; a do $$ block with row-count guards that raise an exception on any mismatch; commit; then one verification SELECT.
+  2. Save a rollback file in supabase/rollbacks/ named <date>_<short-name>.sql that restores the prior state (capture current values with a read first).
+  3. Show Luke a 2-3 line summary: what changes, expected row counts, rollback file path.
+  4. Run only after Luke says yes. Then show the verification result.
+- Schema changes go through supabase/migrations/ and get recorded in supabase_migrations; no untracked DDL.
+- Never write a column the live code reads before the code that reads it is deployed to production.
+- Deploy code before revoking grants or tightening RLS.
+- After any permission, role, grant or RLS change, test logins for each affected role.
+- Never choose "Yes, and don't ask again" on a supabase-flcrm prompt; it removes the gate.
+- Never run this repo with --dangerously-skip-permissions.
+
 ## Auth & nav
 
 - Email/password only, no signup page
@@ -55,7 +74,7 @@
 
 ## Data model (confirmed live via Supabase, 2026-09-22)
 
-Live tables: `projects`, `team_members`, `project_tasks`, `transactions`, `leads`, `contacts` — all RLS enabled. Migration 002 (clients→projects rename, category→branch, roles, Transactions/Leads/Contacts, Lost stage, Build/Subscription toggles) is **applied to the live database**. `projects` had 9 rows as of 2026-09-23 (empty as of 2026-09-22). `supabase/migrations/002_projects_transactions_roles.sql` is the source of truth for schema; `supabase/schema.sql` is the historical baseline.
+Live tables: `projects`, `team_members`, `project_tasks`, `transactions`, `leads`, `contacts` — all RLS enabled. Migration 002 (clients→projects rename, category→branch, roles, Transactions/Leads/Contacts, Lost stage, Build/Subscription toggles) is **applied to the live database**. `supabase/migrations/002_projects_transactions_roles.sql` is the source of truth for schema; `supabase/schema.sql` is the historical baseline.
 
 - **Projects** (renamed from `clients`)
 - **Branch** (renamed from `category`) — Media, Websites, Ecommerce, AI. Ecommerce was "Marketplace" until migration 008 (constraint + existing rows renamed; `/projects/marketplace` redirects to `/projects/ecommerce` via `next.config.mjs`). The check is now `projects_branch_check` — before 008 it was still named `clients_category_check`.

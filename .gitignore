@@ -41,3 +41,6 @@ next-env.d.ts
 
 # PDF.js worker, copied from node_modules by scripts/copy-pdf-worker.mjs
 /public/pdfjs/
+
+# Claude Code local settings (Supabase MCP permission gate)
+.claude/settings.local.json
