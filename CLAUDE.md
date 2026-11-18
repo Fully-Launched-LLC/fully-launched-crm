@@ -49,6 +49,8 @@ Rules:
 - After any permission, role, grant or RLS change, test logins for each affected role.
 - Never choose "Yes, and don't ask again" on a supabase-flcrm prompt; it removes the gate.
 - Never run this repo with --dangerously-skip-permissions.
+- Never query the vault schema (vault.secrets, vault.decrypted_secrets) on either server. supabase_read_only_user is in pg_read_all_data and can decrypt Vault, so read-only mode does not protect secrets.
+- Don't store secrets in Supabase Vault on this project; keep them in Vercel env vars (this includes Stripe keys for the signing build).
 
 ## Auth & nav
 
