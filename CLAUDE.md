@@ -26,7 +26,7 @@
 - Next.js 14 (App Router, TypeScript, Tailwind)
 - Supabase project `okvjdpqnqyrzpbaneivu` — **intentionally shared** with FL-social-dash, separated by table prefix (FL-social-dash owns the `social_*` tables; never touch those from this repo). This supersedes the original spec's "dedicated Supabase project" requirement.
 - Vercel project `fl-crm` (a duplicate empty project named `fully-launched-crm` exists and should stay deleted/unused)
-- GitHub: `Fully-Launched-LLC/fully-launched-crm`, local path `~/Desktop/Files/Dev/FL/fully-launched-crm`, alias `launch`
+- GitHub: `Fully-Launched-LLC/fully-launched-crm`, local path `~/Dev/FL/fully-launched-crm`, alias `launch`
 - Keep-alive cron: `app/api/keep-alive/route.ts` + `vercel.json`, pings Supabase every 3 days to prevent free-tier auto-pause. Don't duplicate this. **Until 2026-09-23 it never actually ran** — the auth middleware redirected the cron's session-less request to `/login`. Fixed by excluding it in the `middleware.ts` matcher.
 - Server-to-server routes (crons, third-party webhooks) must skip the auth middleware: `/api/keep-alive` and everything under `/api/webhooks/` are excluded in the `middleware.ts` matcher. So are `/manifest.json` and `/sw.js` (browsers fetch the manifest without cookies; a login redirect breaks install). Put new webhooks under `/api/webhooks/<provider>` and have each handler verify its caller itself (e.g. the provider's signature) — nothing upstream authenticates them.
 
