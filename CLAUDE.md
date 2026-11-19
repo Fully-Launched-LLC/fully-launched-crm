@@ -302,7 +302,7 @@ History has two sections: **Businesses** (the worked-business list) and **Search
 - Otherwise a matched meeting becomes **one** `lead_touches` row (`meeting_note_id`, unique): channel meeting, inbound, outcome `meeting_held`, summary = first 300 characters, `touched_by` = the team member whose email is the creator, `touched_at` = the meeting start (internal `meeting_note_touch()`, no grants). **A meeting never changes the business's status** (024: the touch trigger skips the status step when `meeting_note_id` is set; `last_touch_at` is still stamped). `classifyTouch` shows it as "Meeting held".
 - Side preview timeline: meetings show title, date, the summary (two lines, "Show full summary") and **Open in Granola** (`source_url`).
 - History > **Unmatched meetings** (Admin/Manager, `components/sales/UnmatchedMeetings.tsx`): meeting notes with no business, "Link to business" searches the Sales businesses and calls `link_meeting(meeting_id, lead_id)` (SECURITY DEFINER, checks `is_admin_or_manager()`, sets `matched_by = manual`, logs the touch as the creator or else the caller).
-- Not built yet: the Granola sync job itself (calls `log_meeting` with the service role key).
+- **Granola sync:** a claude.ai scheduled task "FL Granola meeting sync" (not in this repo), weekdays 5:36pm America/Chicago. It calls `log_meeting` with the service role key; meetings it can't match are logged with `p_lead_id` null (show under History > Unmatched meetings). Days with no sales meetings add no `meeting_notes` rows.
 
 ## Leads data (migrations 017, 018)
 
@@ -421,7 +421,7 @@ API keys server-side only, from env vars, never hardcoded. Start in **test mode*
 - **No in-app resend/void.** After sending, the Invoicing field shows "… invoice sent · View in Stripe"; resend or void in the Stripe dashboard. `stripe_deposit_invoice_id` / `stripe_build_invoice_id` block a second send.
 - **Webhook** (`app/api/webhooks/stripe/route.ts`, excluded from the auth middleware): verifies the Stripe signature before anything else. `invoice.paid` → `payment_status` Deposit Paid / Paid, only for invoices this app created (metadata) whose id matches the stored one, and never moves status backwards. `invoice.payment_failed` → logged only, no action. Writes via the service-role client (`lib/supabase/admin.ts`, server-only, bypasses RLS — webhook use only).
 - Duplicate never copies `stripe_*` ids.
-- **`payment_status` is Admin-only** (migration 042, trigger `projects_guard_payment_status`, applied Nov 16 from the SQL editor; refuses 42501 for any signed-in non-Admin; service_role and postgres pass). App side (Nov 16): the Payment Status field on the project page is read-only for non-Admins; Duplicate doesn't copy it; the invoice route (Admin or Manager) writes it with the service-role client after its role check; the Stripe webhook already writes it as service role; Finance > Record payment writes it as the user and is Admin-only (UI, and transactions RLS).
+- **`payment_status` is Admin-only** (migration 042, trigger `projects_guard_payment_status`, applied Nov 16 from the SQL editor, recorded in migration history Nov 19 as version 20261116120000; refuses 42501 for any signed-in non-Admin; service_role and postgres pass). App side (Nov 16): the Payment Status field on the project page is read-only for non-Admins; Duplicate doesn't copy it; the invoice route (Admin or Manager) writes it with the service-role client after its role check; the Stripe webhook already writes it as service role; Finance > Record payment writes it as the user and is Admin-only (UI, and transactions RLS).
 
 ### Piece 2 — Subscriptions (not built)
 
@@ -451,8 +451,8 @@ The one list of open work. Feature sections point here.
 
 1. ~~"+ Add Team Member" screen (three-role picker)~~ done, shipped in 247e927
 2. ~~Load real client data~~ done: projects, leads and contacts have real data
-3. ~~Lock `payment_status` to Admins~~ done Nov 16: migration 042 applied from the SQL editor (not in migration history) and verified on live in rolled-back transactions (Talon changing status refused 42501, Talon's other edit allowed, Luke's change allowed); app side in 231f378 (see Stripe Piece 1).
-4. ~~Remove Elias~~ done Nov 16: archived, not deleted (migrations 043 stored pill colors and 044 archived_at, both applied from the SQL editor, so not in migration history). Hesedea project owner and the Tequila Limón lead moved to Matteo / Luke; Whitney Banks' Ecommerce project to Matteo; her Complete, paid website project keeps Elias as owner (closed record). Luke leads AI + Websites.
+3. ~~Lock `payment_status` to Admins~~ done Nov 16: migration 042 applied from the SQL editor, now recorded in migration history (version 20261116120000), and verified on live in rolled-back transactions (Talon changing status refused 42501, Talon's other edit allowed, Luke's change allowed); app side in 231f378 (see Stripe Piece 1).
+4. ~~Remove Elias~~ done Nov 16: archived, not deleted (migrations 043 stored pill colors and 044 archived_at, both applied from the SQL editor, now recorded in migration history as versions 20261116120100 / 20261116120200). Hesedea project owner and the Tequila Limón lead moved to Matteo / Luke; Whitney Banks' Ecommerce project to Matteo; her Complete, paid website project keeps Elias as owner (closed record). Luke leads AI + Websites.
 5. ~~Branch colors everywhere~~ done Nov 16: AI crimson, Media orange, Ecommerce green, Websites blue, white text (see Branding).
 6. Time clock (Phase 1): Luke's production click-through.
 7. Cal.com: `CALCOM_WEBHOOK_SECRET` set on Vercel Nov 5 and Luke's webhook done. Remaining: Matteo and Tait add their Cal.com webhook + booking link, then a real test booking to confirm metadata/payload fields.
@@ -462,7 +462,7 @@ The one list of open work. Feature sections point here.
 11. Phase 4 Integrations: Social card, Lead Finder import contract.
 12. Deal Desk: end-to-end production test pending (Luke); AI Tool Build Exclusions wording awaits Luke. SOW Section 14 signature lines are handled in the Google Doc master, not code.
 13. Salesperson access check: verify the Salesperson role (e.g. Talon: no Transactions) end to end.
-14. Granola sync job (calls `log_meeting` with the service role key); not built.
+14. ~~Granola sync job~~ done: claude.ai scheduled task "FL Granola meeting sync" (not in this repo), weekdays 5:36pm America/Chicago, calls `log_meeting`; unmatched meetings are logged with `p_lead_id` null. Last run Nov 18 succeeded.
 15. Default privileges in public still grant new objects to anon/public. Shared schema with FL-social-dash, decide with Tait before changing.
 16. Earn-up pool after Elias left (Matteo + Tait only?): awaits Luke; then update the Settings label and docs.
 17. Lead Finder: Luke testing quick search on real sales calls; collect fixes before changing the flow.
