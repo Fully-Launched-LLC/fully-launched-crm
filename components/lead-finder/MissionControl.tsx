@@ -58,7 +58,7 @@ export default function MissionControl({
   svc: Svc;
   onToggleSvc: (k: keyof Svc) => void;
   onNewSearch: () => void;
-  // null: this user can't start this kind of search (sweeps: Admin/Manager).
+  // null: no Re-run (old area sweeps, removed Nov 2026).
   onRerun: (() => void) | null;
 }) {
   const isSweep = run.kind === "sweep";

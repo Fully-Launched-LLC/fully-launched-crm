@@ -13,21 +13,19 @@ import LocalDateTime from "@/components/LocalDateTime";
 // sweep radius), who, when, results, and how many of its businesses have
 // been contacted since (a Sales record with its latest touch after the run
 // started; matched by Google place id). Open shows the run's results in
-// Mission Control; Run again repeats it (a sweep fills the form with the
-// cost confirm, and isn't offered to Salespeople).
+// Mission Control; Run again repeats a quick search. Old area sweeps (removed
+// Nov 2026) still open and keep their label, but have no Run again.
 
 const PAGE = 25;
 
 export default function SalesSearches({
   me,
   members,
-  canSweep,
   onOpen,
   onRunAgain,
 }: {
   me: TeamMember | null;
   members: TeamMember[];
-  canSweep: boolean;
   onOpen: (runId: string) => void;
   onRunAgain: (run: LeadFinderRun) => void;
 }) {
@@ -132,7 +130,7 @@ export default function SalesSearches({
                 </tr>
               ) : runs.length ? (
                 runs.map((r) => {
-                  const canRerun = r.kind === "search" || canSweep;
+                  const canRerun = r.kind === "search";
                   const body = bodyFromRun(r);
                   const focus = asMode(body.mode);
                   return (

@@ -3,6 +3,8 @@ import { asMode, modeLabel, type SearchMode } from "@/lib/sales/searchModes";
 
 // A run's POST /api/lead-finder/runs body, rebuilt from its params, so Re-run
 // for fresh data and History > Searches "Run again" send the same request.
+// The sweep shape is kept only to label old area sweeps (removed Nov 2026);
+// those are never run again.
 
 export type RunBody =
   | { kind: "search"; mode?: SearchMode; state: string; city: string; zip: string; type: string; depth: number; services: string[] }

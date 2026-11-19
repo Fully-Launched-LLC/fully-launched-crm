@@ -7,8 +7,8 @@ import { salesFlags } from "@/lib/sales/flags";
 
 // Sales: Find (search Google for local businesses, scan their websites, log
 // outcomes) and History (every Sales business and its latest outcome).
-// Everyone can run a quick search; area sweeps are Admin/Manager (RLS
-// enforces both). ?run=<id> opens a run, so a refresh or another team member
+// Everyone can run a quick search (area sweeps were removed Nov 2026; RLS
+// still enforces who may create runs). ?run=<id> opens a run, so a refresh or another team member
 // sees the same progress; ?view=history or ?lead=<id> opens History.
 // /leads and /lead-finder redirect here (next.config.mjs), query kept.
 export default async function SalesPage({

@@ -9,7 +9,6 @@ import type { LatLng, PageSpeed } from "@/lib/lead-finder/types";
 // Cost per call (list price, before Google's monthly free allowance):
 //   Text Search with this field mask (includes reviews): Enterprise +
 //   Atmosphere, about $0.04. Place Details (same fields): about $0.025.
-//   The sweep's center lookup only asks for places.location (Pro SKU).
 
 // Only ask Google for exactly the fields we use: keeps each search fast and cheap.
 export const FIELD_MASK = [
@@ -97,13 +96,6 @@ export async function googlePlaceDetails(placeId: string): Promise<GooglePlace> 
   const data = await resp.json();
   if (!resp.ok) throw new Error((data.error && data.error.message) || "Could not load that business from Google.");
   return data as GooglePlace;
-}
-
-/** Center of a city/zip, for sweep tiles. One Text Search (Pro SKU). */
-export async function googleLocate(phrase: string): Promise<LatLng | null> {
-  const center = await googleTextSearch({ textQuery: phrase, pageSize: 1 }, "places.location");
-  const loc = center.places[0]?.location;
-  return loc ? { latitude: loc.latitude, longitude: loc.longitude } : null;
 }
 
 /** PageSpeed Insights, mobile. timeoutMs defaults to Matteo's 60s. */

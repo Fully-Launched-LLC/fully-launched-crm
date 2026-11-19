@@ -2,10 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { createRun, runProgress, type CreateRunBody } from "@/lib/lead-finder/runner";
 import { errorResponse, requireMember } from "@/lib/lead-finder/http";
 
-// POST /api/lead-finder/runs: start a quick search (any team member) or an
-// area sweep (Admin/Manager; also enforced by RLS). A sweep looks up its
-// center here (the "+1" Google request in the estimate). The page then
-// calls /runs/[id]/step until the run is done.
+// POST /api/lead-finder/runs: start a quick search (any team member). The
+// page then calls /runs/[id]/step until the run is done. Area sweeps were
+// removed Nov 2026: kind "sweep" gets a 400 ("Area sweeps were removed").
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;

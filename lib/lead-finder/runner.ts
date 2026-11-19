@@ -1,15 +1,8 @@
 import "server-only";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { TeamMember } from "@/lib/types";
-import {
-  COST_PER_SEARCH,
-  MAX_SWEEP_SEARCHES,
-  locationPhrase,
-  makeTiles,
-  searchPages,
-  sweepPlan,
-} from "@/lib/lead-finder/sweep";
-import { googleLocate, googleTextSearch, LeadFinderConfigError, type GooglePlace } from "@/lib/lead-finder/google";
+import { COST_PER_SEARCH, locationPhrase, searchPages } from "@/lib/lead-finder/sweep";
+import { googleTextSearch, type GooglePlace } from "@/lib/lead-finder/google";
 import { mapLimit, scanPlace, SCAN_CONCURRENCY } from "@/lib/lead-finder/scanner";
 import { findLeadMatches } from "@/lib/leads/upsert";
 import { isOutcomeTouch, type LatestTouch } from "@/lib/sales/outcomes";
@@ -21,10 +14,9 @@ import type {
   RunResult,
   ScannedPlace,
   SearchParams,
-  SweepParams,
 } from "@/lib/lead-finder/types";
 
-// Lead Finder runs on Vercel. Matteo's server kept sweeps in an in-memory
+// Lead Finder runs on Vercel. Matteo's server kept runs in an in-memory
 // Map and kept working after replying; a serverless function is frozen after
 // its response, so here every run lives in lead_finder_runs /
 // lead_finder_results and the browser drives it one step at a time
@@ -32,20 +24,21 @@ import type {
 // another team member opening the run, picks up from the database.
 //
 // One step (route maxDuration 60s):
-//   search phase  Google searches until STEP_BUDGET_MS is used up
-//                 (quick search: the next page; sweep: 3 at a time, like
-//                 Matteo's 3 workers). done_searches advances by
+//   search phase  Google searches until STEP_BUDGET_MS is used up (the next
+//                 page of the quick search). done_searches advances by
 //                 compare-and-set, so two tabs never run the same batch.
 //   scan phase    8 unscanned results at a time (Matteo's concurrency),
 //                 again until the budget is used; a hard deadline caps every
 //                 website fetch so the step always ends before the timeout.
 // A lease (params.lease_until) keeps two steppers off the same run; a step
 // that dies leaves a lease that expires on its own.
+//
+// Quick search only: area sweeps were removed Nov 2026. Old sweep runs stay
+// readable (results, labels) but can't be created or stepped.
 
 export const STEP_BUDGET_MS = 20_000; // start no new batch after this
 const SCAN_DEADLINE_MS = 48_000; // every fetch in a step ends by this
 const LEASE_MS = 58_000;
-const SWEEP_PARALLEL = 3;
 
 export class HttpError extends Error {
   constructor(public status: number, message: string) {
@@ -53,12 +46,12 @@ export class HttpError extends Error {
   }
 }
 
-export function canSweep(member: TeamMember): boolean {
+function isAdminOrManager(member: TeamMember): boolean {
   return member.role === "Admin" || member.role === "Manager";
 }
 
 function canStep(member: TeamMember, run: LeadFinderRun): boolean {
-  return canSweep(member) || run.run_by === member.id;
+  return isAdminOrManager(member) || run.run_by === member.id;
 }
 
 // ---------------------------------------------------------------------------
@@ -66,65 +59,36 @@ function canStep(member: TeamMember, run: LeadFinderRun): boolean {
 
 export type CreateRunBody =
   | { kind: "search"; mode?: string; state: string; city?: string; zip?: string; type: string; depth?: number; services?: string[] }
-  | { kind: "sweep"; mode?: string; state: string; city?: string; zip?: string; radius: number; services?: string[]; types?: string };
+  // Area sweeps were removed; the API answers 400.
+  | { kind: "sweep" };
 
 export async function createRun(supabase: SupabaseClient, member: TeamMember, body: CreateRunBody): Promise<LeadFinderRun> {
+  if (body.kind !== "search") {
+    throw new HttpError(400, (body.kind as string) === "sweep" ? "Area sweeps were removed" : "Unknown run type.");
+  }
   const state = (body.state || "").trim();
   const city = (body.city || "").trim();
   const zip = (body.zip || "").trim();
   const services = Array.isArray(body.services) ? body.services.map(String) : [];
 
-  let insert: Record<string, unknown>;
-  if (body.kind === "search") {
-    const type = (body.type || "").trim();
-    if (!state || !type) throw new HttpError(400, "Choose a state and enter a business type to search.");
-    const depth = Math.min(60, Math.max(20, Number(body.depth) || 20));
-    const pages = searchPages(depth);
-    const params: SearchParams = {
-      mode: asMode(body.mode),
-      state, city, zip, type, depth, services,
-      label: `${type} · ${locationPhrase(state, city, zip)}`,
-      next_page_token: null,
-      lease_until: null,
-    };
-    insert = {
-      kind: "search",
-      params,
-      planned_searches: pages,
-      est_cost: +(pages * COST_PER_SEARCH).toFixed(2),
-      run_by: member.id,
-    };
-  } else if (body.kind === "sweep") {
-    if (!canSweep(member)) throw new HttpError(403, "Area sweeps are for Admins and Managers.");
-    if (!state || !(city || zip)) throw new HttpError(400, "An area sweep needs a state plus a city or zip code to center on.");
-    const plan = sweepPlan({ radius: body.radius, services, types: body.types || "" });
-    if (!plan.types.length) throw new HttpError(400, "Pick at least one service or enter business types.");
-    if (plan.tooBig) {
-      throw new HttpError(400, `That sweep needs ${plan.searches} Google searches. The limit is ${MAX_SWEEP_SEARCHES}. Use a smaller radius or fewer business types.`);
-    }
-    // The +1 request in the estimate: find the center to lay out the tiles.
-    const center = await googleLocate(locationPhrase(state, city, zip));
-    if (!center) throw new HttpError(400, "Could not find that city or zip on the map.");
-    const stOnly = services.length === 1 && services[0] === "servicetitan";
-    const params: SweepParams = {
-      mode: asMode(body.mode),
-      state, city, zip, services,
-      radius: plan.radius,
-      types: plan.types,
-      tiles: makeTiles(center, plan.radius),
-      label: `${stOnly ? "ServiceTitan sweep" : "Area sweep"} · ${plan.radius} mi of ${locationPhrase(state, city, zip)}`,
-      lease_until: null,
-    };
-    insert = {
-      kind: "sweep",
-      params,
-      planned_searches: plan.searches,
-      est_cost: plan.estCost,
-      run_by: member.id,
-    };
-  } else {
-    throw new HttpError(400, "Unknown run type.");
-  }
+  const type = (body.type || "").trim();
+  if (!state || !type) throw new HttpError(400, "Choose a state and enter a business type to search.");
+  const depth = Math.min(60, Math.max(20, Number(body.depth) || 20));
+  const pages = searchPages(depth);
+  const params: SearchParams = {
+    mode: asMode(body.mode),
+    state, city, zip, type, depth, services,
+    label: `${type} · ${locationPhrase(state, city, zip)}`,
+    next_page_token: null,
+    lease_until: null,
+  };
+  const insert = {
+    kind: "search",
+    params,
+    planned_searches: pages,
+    est_cost: +(pages * COST_PER_SEARCH).toFixed(2),
+    run_by: member.id,
+  };
 
   const { data, error } = await supabase.from("lead_finder_runs").insert(insert).select("*").single();
   if (error) throw new HttpError(error.code === "42501" ? 403 : 500, error.message);
@@ -216,45 +180,18 @@ async function advanceSearches(
 }
 
 async function searchBatch(supabase: SupabaseClient, run: LeadFinderRun): Promise<LeadFinderRun | null> {
-  if (run.kind === "search") {
-    const p = run.params as SearchParams;
-    const body: Record<string, unknown> = { textQuery: `${p.type} in ${locationPhrase(p.state, p.city, p.zip)}`, pageSize: 20 };
-    if (p.next_page_token) body.pageToken = p.next_page_token;
-    const page = await googleTextSearch(body);
-    await saveFound(supabase, run.id, page.places.map((place) => ({ place, type: p.type })));
-    const done = run.done_searches + 1;
-    return advanceSearches(supabase, run, {
-      done_searches: done,
-      // No next page: Google has nothing more, so the search is complete.
-      planned_searches: page.nextPageToken ? run.planned_searches : done,
-      params: { ...p, next_page_token: page.nextPageToken ?? null },
-    });
-  }
-
-  const p = run.params as SweepParams;
-  const start = run.done_searches;
-  const end = Math.min(run.planned_searches, start + SWEEP_PARALLEL);
-  const tasks = [];
-  for (let i = start; i < end; i++) {
-    tasks.push({ type: p.types[Math.floor(i / p.tiles.length)], tile: p.tiles[i % p.tiles.length] });
-  }
-  let lastError: string | null = null;
-  const pages = await Promise.all(
-    tasks.map(async ({ type, tile }) => {
-      try {
-        const page = await googleTextSearch({ textQuery: type, pageSize: 20, locationRestriction: { rectangle: tile } });
-        return page.places.map((place) => ({ place, type }));
-      } catch (e) {
-        if (e instanceof LeadFinderConfigError) throw e;
-        lastError = (e as Error).message; // Matteo: log it and keep sweeping
-        return [];
-      }
-    })
-  );
-  await saveFound(supabase, run.id, pages.flat()); // in task order
+  if (run.kind !== "search") throw new Error("Area sweeps were removed");
+  const p = run.params as SearchParams;
+  const body: Record<string, unknown> = { textQuery: `${p.type} in ${locationPhrase(p.state, p.city, p.zip)}`, pageSize: 20 };
+  if (p.next_page_token) body.pageToken = p.next_page_token;
+  const page = await googleTextSearch(body);
+  await saveFound(supabase, run.id, page.places.map((place) => ({ place, type: p.type })));
+  const done = run.done_searches + 1;
   return advanceSearches(supabase, run, {
-    done_searches: end,
-    ...(lastError ? { params: { ...p, last_error: lastError } } : {}),
+    done_searches: done,
+    // No next page: Google has nothing more, so the search is complete.
+    planned_searches: page.nextPageToken ? run.planned_searches : done,
+    params: { ...p, next_page_token: page.nextPageToken ?? null },
   });
 }
 
